@@ -1,0 +1,6 @@
+# 构建产物（可用 python build_portable.py 重新生成）
+MermaidToPng-portable.zip
+
+# 系统垃圾
+Thumbs.db
+Desktop.ini

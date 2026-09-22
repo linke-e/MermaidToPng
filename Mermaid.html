@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MermaidToPng — Mermaid 转 PNG</title>
+<!--
+  MermaidToPng · 单文件本地工具（零构建、零安装，双击即用）
+  依赖：./mermaid.min.js（mermaid v11 官方 UMD 包，本地内置，离线可用）
+  如需换源：下载 https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js 覆盖即可
+-->
+<script src="./mermaid.min.js"></script>
+<style>
+  :root{
+    --bg:#0a0e1a;
+    --panel:rgba(255,255,255,.045);
+    --panel-border:rgba(255,255,255,.09);
+    --fg:#e6e9f2;
+    --muted:#8b93a7;
+    --accent-a:#7c3aed;   /* 霓虹紫 */
+    --accent-b:#06b6d4;   /* 霓虹青 */
+    --danger:#f87171;
+    --mono:'Cascadia Code','Consolas','JetBrains Mono',monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:
+      radial-gradient(1100px 500px at 85% -10%, rgba(124,58,237,.16), transparent 60%),
+      radial-gradient(900px 500px at -10% 110%, rgba(6,182,212,.12), transparent 60%),
+      var(--bg);
+    color:var(--fg);
+    font-family:'Segoe UI',system-ui,'Microsoft YaHei',sans-serif;
+    display:flex;flex-direction:column;overflow:hidden;
+  }
+
+  /* ── 顶栏 ─────────────────────────────── */
+  header{
+    display:flex;align-items:center;gap:12px;
+    padding:10px 16px;
+    border-bottom:1px solid var(--panel-border);
+    background:rgba(255,255,255,.03);
+    backdrop-filter:blur(14px);
+    flex:none;
+  }
+  .logo{
+    font-weight:700;font-size:17px;letter-spacing:.5px;
+    background:linear-gradient(135deg,var(--accent-a),var(--accent-b));
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+    white-space:nowrap;
+  }
+  .logo::before{content:'◆ '}
+  .spacer{flex:1}
+  button{
+    border:1px solid var(--panel-border);
+    background:rgba(255,255,255,.05);
+    color:var(--fg);font:inherit;font-size:13px;
+    padding:6px 12px;border-radius:8px;cursor:pointer;
+    transition:background .15s,border-color .15s;
+    white-space:nowrap;
+  }
+  button:hover{background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.2)}
+  button.primary{
+    background:linear-gradient(135deg,var(--accent-a),var(--accent-b));
+    border:none;font-weight:600;
+  }
+  button.primary:hover{filter:brightness(1.15)}
+  select,checkbox{font:inherit;font-size:13px}
+  select{
+    background:rgba(255,255,255,.05);color:var(--fg);
+    border:1px solid var(--panel-border);border-radius:8px;padding:6px 8px;cursor:pointer;
+  }
+  select option{background:#141927;color:var(--fg)}
+  label.chk{display:flex;align-items:center;gap:5px;font-size:13px;color:var(--muted);cursor:pointer;white-space:nowrap}
+  label.chk input{accent-color:var(--accent-a);cursor:pointer}
+  input[type=color]{
+    width:32px;height:24px;padding:0;border:1px solid var(--panel-border);
+    border-radius:5px;background:none;cursor:pointer;
+  }
+  input[type=color]::-webkit-color-swatch-wrapper{padding:2px}
+  input[type=color]::-webkit-color-swatch{border:none;border-radius:3px}
+  input[type=color]:disabled{opacity:.35;cursor:not-allowed}
+
+  /* ── 主区域 ───────────────────────────── */
+  main{
+    flex:1;display:grid;min-height:0;
+    grid-template-columns:var(--split,46%) 6px 1fr;
+  }
+  .pane{display:flex;flex-direction:column;min-width:0;min-height:0}
+  .pane.left{padding:12px 4px 12px 12px}
+  .pane.right{padding:12px 12px 12px 4px}
+  .card{
+    flex:1;display:flex;flex-direction:column;min-height:0;
+    background:var(--panel);border:1px solid var(--panel-border);
+    border-radius:14px;backdrop-filter:blur(14px);overflow:hidden;
+  }
+  .card-h{
+    display:flex;align-items:center;gap:8px;
+    padding:8px 12px;border-bottom:1px solid var(--panel-border);
+    font-size:12px;font-weight:600;letter-spacing:1.5px;color:var(--muted);
+    flex:none;flex-wrap:wrap;
+  }
+  .card-h .tag{color:var(--accent-b)}
+  .card-h .dim{color:var(--muted);font-weight:400;letter-spacing:0}
+
+  textarea{
+    flex:1;width:100%;resize:none;border:none;outline:none;
+    background:transparent;color:var(--fg);
+    font-family:var(--mono);font-size:13.5px;line-height:1.65;
+    padding:14px;tab-size:4;
+  }
+  #err{
+    display:none;flex:none;
+    margin:0 12px 10px;padding:8px 12px;
+    background:rgba(248,113,113,.12);border:1px solid rgba(248,113,113,.35);
+    border-radius:8px;color:var(--danger);
+    font-family:var(--mono);font-size:12px;line-height:1.5;
+    max-height:110px;overflow:auto;white-space:pre-wrap;
+  }
+
+  /* 预览画布（缩放/拖拽容器） */
+  #stage{
+    flex:1;position:relative;overflow:hidden;cursor:grab;
+    background:
+      radial-gradient(rgba(255,255,255,.05) 1px, transparent 1px) 0 0/22px 22px,
+      rgba(0,0,0,.18);
+    touch-action:none;
+  }
+  #stage.grabbing{cursor:grabbing}
+  #viewport{position:absolute;top:0;left:0;transform-origin:0 0;will-change:transform}
+  #viewport svg{display:block;overflow:visible}
+  #hint{
+    position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    color:var(--muted);font-size:14px;pointer-events:none;user-select:none;
+  }
+
+  /* 分割条 */
+  #split{cursor:col-resize;background:transparent;transition:background .15s}
+  #split:hover{background:rgba(124,58,237,.35)}
+
+  @media (max-width:860px){
+    main{grid-template-columns:1fr;grid-template-rows:45% 6px 1fr}
+    #split{cursor:row-resize}
+    #split:hover{background:rgba(6,182,212,.35)}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">MermaidToPng</div>
+  <span class="dim" style="font-size:12px;color:var(--muted)">粘贴代码 → 实时预览 → 导出 PNG</span>
+  <div class="spacer"></div>
+  <button id="btnExample" title="插入示例流程图">示例</button>
+  <button id="btnCopy"   title="复制代码">复制</button>
+  <button id="btnClear"  title="清空代码">清空</button>
+</header>
+
+<main>
+  <!-- 左：Code 页 -->
+  <section class="pane left">
+    <div class="card">
+      <div class="card-h">
+        <span class="tag">CODE</span>
+        <span class="dim">Ctrl+Enter 立即渲染 · 自动保存本地</span>
+      </div>
+      <textarea id="code" spellcheck="false"
+        placeholder="在此粘贴 Mermaid 代码，例如：&#10;graph TD&#10;  A[开始] --> B[结束]"></textarea>
+      <div id="err"></div>
+    </div>
+  </section>
+
+  <div id="split" title="拖动调整分栏"></div>
+
+  <!-- 右：预览页 -->
+  <section class="pane right">
+    <div class="card">
+      <div class="card-h">
+        <span class="tag">PREVIEW</span>
+        <span class="dim" id="sizeInfo"></span>
+        <div class="spacer"></div>
+        <button id="btnFit"    title="适应窗口">适应</button>
+        <button id="btnReset"  title="100% 原始尺寸">1:1</button>
+        <span class="dim" id="zoomLabel" style="min-width:46px;text-align:right">100%</span>
+        <span class="dim" style="margin-left:6px">|</span>
+        <select id="pngScale" title="PNG 导出倍率">
+          <option value="1">1×</option>
+          <option value="2" selected>2× 高清</option>
+          <option value="3">3× 超清</option>
+        </select>
+        <label class="chk" title="PNG 背景颜色（勾选透明底时忽略）">底色
+          <input type="color" id="pngBg" value="#ffffff">
+        </label>
+        <label class="chk" title="PNG 使用透明背景（忽略底色）">
+          <input type="checkbox" id="pngTransparent">透明底
+        </label>
+        <button id="btnPNG" class="primary" title="导出 PNG（浏览器将弹出保存位置对话框）">⬇ 下载 PNG</button>
+      </div>
+      <div id="stage">
+        <div id="viewport"></div>
+        <div id="hint">左侧粘贴 Mermaid 代码开始 · 滚轮缩放 / 拖拽移动 / 双击适应</div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+'use strict';
+/* ================= Mermaid 初始化 =================
+   htmlLabels:false → 标签走 <text> 而非 foreignObject，
+   否则 SVG 经 <img> 转 canvas 时 foreignObject 被浏览器禁用，导出 PNG 全空白。
+   useMaxWidth:false → svg 自然尺寸固定，便于适应计算与 1:1/高清导出。 */
+mermaid.initialize({
+  startOnLoad: false,
+  securityLevel: 'loose',
+  theme: 'dark',
+  fontFamily: '"Segoe UI","Microsoft YaHei",sans-serif',
+  flowchart: { htmlLabels: false, useMaxWidth: false, curve: 'basis' },
+  sequence:  { useMaxWidth: false },
+  gantt:     { useMaxWidth: false },
+  class:     { htmlLabels: false, useMaxWidth: false },
+  state:     { htmlLabels: false, useMaxWidth: false },
+  er:        { useMaxWidth: false },
+  journey:   { useMaxWidth: false },
+  pie:       { useMaxWidth: false },
+  git:       { useMaxWidth: false },
+  mindmap:   { useMaxWidth: false },
+  timeline:  { useMaxWidth: false },
+});
+
+const $ = id => document.getElementById(id);
+const stage = $('stage'), viewport = $('viewport'), codeEl = $('code'),
+      errEl = $('err'), zoomLabel = $('zoomLabel'), sizeInfo = $('sizeInfo'),
+      hint = $('hint');
+
+const state = {
+  scale: 1, tx: 0, ty: 0,          // 视图变换（translate + scale，origin 左上）
+  vbW: 0, vbH: 0,                  // 当前图自然尺寸（viewBox）
+  lastRawSvg: null,                // 渲染成功的原始 SVG 字符串（导出用）
+  seq: 0, error: '', dragging: null,
+};
+
+const EXAMPLE = `graph LR
+  A[粘贴 Mermaid 代码] --> B{语法正确?}
+  B -- 是 --> C[实时渲染预览]
+  B -- 否 --> D[显示错误提示]
+  C --> E[缩放 / 拖拽查看]
+  E --> F[导出高清 PNG]
+  style A fill:#7c3aed,color:#fff
+  style F fill:#06b6d4,color:#fff`;
+
+/* ================= 渲染 ================= */
+async function renderDiagram(raw) {
+  const code = (raw ?? codeEl.value).trim();
+  state.error = '';
+  if (!code) {
+    state.lastRawSvg = null;
+    viewport.innerHTML = '';
+    hint.style.display = 'flex';
+    sizeInfo.textContent = '';
+    return { ok: false, empty: true };
+  }
+  try {
+    await mermaid.parse(code);                       // 语法预检，抛错则不覆盖旧图
+    const { svg } = await mermaid.render('mtpGraph' + (state.seq++), code);
+    state.lastRawSvg = svg;
+    mountSVG(svg);
+    return { ok: true, width: state.vbW, height: state.vbH };
+  } catch (e) {
+    state.error = (e && (e.str || e.message)) || String(e);
+    showError();
+    return { ok: false, error: state.error };
+  }
+}
+
+function mountSVG(svgText) {
+  viewport.innerHTML = svgText;
+  hint.style.display = 'none';
+  errEl.style.display = 'none';
+  const el = viewport.querySelector('svg');
+  if (!el) return;
+  // 先从 viewBox 取自然尺寸，再写回显式像素宽高。
+  // 只删 mermaid 自带 width/height 而不补显式尺寸的话，SVG 在 auto 尺寸的
+  // absolute 容器里百分比解析为 0×0 —— 屏幕上什么都看不见（导出不受影响）。
+  let w = 800, h = 600;
+  const vb = el.viewBox && el.viewBox.baseVal;
+  if (vb && vb.width && vb.height) { w = vb.width; h = vb.height; }
+  else { try { const b = el.getBBox(); w = b.width; h = b.height; } catch (_) {} }
+  el.removeAttribute('width'); el.removeAttribute('height'); el.removeAttribute('style');
+  el.style.display = 'block'; el.style.overflow = 'visible';
+  el.style.width = w + 'px'; el.style.height = h + 'px';
+  state.vbW = w; state.vbH = h;
+  sizeInfo.textContent = `${Math.round(w)}×${Math.round(h)} px`;
+  applyTransform();
+  fitSoon();                                         // 新图自动适应窗口
+}
+
+function showError() {
+  errEl.textContent = '✗ 语法错误：\n' + state.error;
+  errEl.style.display = 'block';
+}
+
+/* ================= 缩放 / 拖拽 ================= */
+function applyTransform() {
+  viewport.style.transform = `translate(${state.tx}px,${state.ty}px) scale(${state.scale})`;
+  zoomLabel.textContent = Math.round(state.scale * 100) + '%';
+}
+function zoomAt(mx, my, factor) {                    // 以鼠标位置为不动点缩放
+  const ns = Math.min(8, Math.max(0.05, state.scale * factor));
+  const k = ns / state.scale;
+  state.tx = mx - (mx - state.tx) * k;
+  state.ty = my - (my - state.ty) * k;
+  state.scale = ns;
+  applyTransform();
+}
+function fitView() {
+  if (!state.vbW) return;
+  const cw = stage.clientWidth, ch = stage.clientHeight;
+  const s = Math.min((cw - 48) / state.vbW, (ch - 48) / state.vbH);
+  state.scale = Math.min(Math.max(s, 0.05), 2);
+  state.tx = (cw - state.vbW * state.scale) / 2;
+  state.ty = (ch - state.vbH * state.scale) / 2;
+  applyTransform();
+}
+let fitTimer = null;
+function fitSoon() { clearTimeout(fitTimer); fitTimer = setTimeout(fitView, 30); }
+
+stage.addEventListener('wheel', e => {
+  if (!state.lastRawSvg) return;
+  e.preventDefault();
+  const r = stage.getBoundingClientRect();
+  zoomAt(e.clientX - r.left, e.clientY - r.top, e.deltaY < 0 ? 1.12 : 1 / 1.12);
+}, { passive: false });
+
+stage.addEventListener('pointerdown', e => {
+  if (e.button !== 0 || !state.lastRawSvg) return;
+  state.dragging = { x: e.clientX, y: e.clientY, tx: state.tx, ty: state.ty };
+  stage.setPointerCapture(e.pointerId);
+  stage.classList.add('grabbing');
+});
+stage.addEventListener('pointermove', e => {
+  if (!state.dragging) return;
+  state.tx = state.dragging.tx + e.clientX - state.dragging.x;
+  state.ty = state.dragging.ty + e.clientY - state.dragging.y;
+  applyTransform();
+});
+['pointerup', 'pointercancel'].forEach(ev =>
+  stage.addEventListener(ev, () => { state.dragging = null; stage.classList.remove('grabbing'); }));
+stage.addEventListener('dblclick', fitView);
+
+/* ================= PNG 导出 =================
+   SVG → data:URL → <img> → canvas(倍率缩放) → toBlob → a[download]。
+   浏览器对 a[download] 弹"另存为"，用户即可选择保存位置（Chrome/Edge 需
+   设置"每次下载前询问保存位置"，或按住文件拖出；Firefox 默认弹窗）。 */
+async function exportPNGBlob(mult = 2, transparent = false, bgColor = '#ffffff') {
+  if (!state.lastRawSvg) throw new Error('没有可导出的图：请先渲染成功的 Mermaid 代码');
+  const img = new Image();
+  img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(state.lastRawSvg);
+  await new Promise((res, rej) => { img.onload = res; img.onerror = () => rej(new Error('SVG 加载失败')); });
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(state.vbW * mult));
+  c.height = Math.max(1, Math.round(state.vbH * mult));
+  const ctx = c.getContext('2d');
+  if (!transparent) { ctx.fillStyle = bgColor || '#ffffff'; ctx.fillRect(0, 0, c.width, c.height); }
+  ctx.drawImage(img, 0, 0, c.width, c.height);
+  return await new Promise(res => c.toBlob(res, 'image/png'));
+}
+async function exportPNG() {
+  if (!state.lastRawSvg) { alert('请先输入正确的 Mermaid 代码'); return; }
+  try {
+    const blob = await exportPNGBlob(+$('pngScale').value, $('pngTransparent').checked, $('pngBg').value);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'mermaid-' + new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-') + '.png';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  } catch (e) { alert('导出失败：' + e.message); }
+}
+
+/* ================= 预览背景同步（所见即所得） =================
+   预览背景 = 导出背景：底色铺满整个预览画布；透明底用深色棋盘格示意
+   （棋盘格只出现在屏幕上，导出 PNG 里是真透明）。 */
+const CHECKER_BG = 'repeating-conic-gradient(#262b3a 0% 25%, #171b26 0% 50%) 0 0/22px 22px';
+function syncStageBg() {
+  stage.style.background = $('pngTransparent').checked ? CHECKER_BG : ($('pngBg').value || '#ffffff');
+}
+
+/* ================= 编辑器事件 ================= */
+let debounce = null;
+codeEl.addEventListener('input', () => {
+  localStorage.setItem('mtp.code', codeEl.value);
+  clearTimeout(debounce);
+  debounce = setTimeout(() => renderDiagram(), 400);
+});
+codeEl.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); clearTimeout(debounce); renderDiagram(); }
+  if (e.key === 'Tab') {                              // Tab 插入两空格
+    e.preventDefault();
+    const s = codeEl.selectionStart, t = codeEl.selectionEnd;
+    codeEl.setRangeText('  ', s, t, 'end');
+    localStorage.setItem('mtp.code', codeEl.value);
+  }
+});
+$('btnExample').onclick = () => { codeEl.value = EXAMPLE; localStorage.setItem('mtp.code', EXAMPLE); renderDiagram(); };
+$('btnClear').onclick  = () => { codeEl.value = ''; localStorage.setItem('mtp.code', ''); renderDiagram(); codeEl.focus(); };
+$('btnCopy').onclick   = async () => {
+  try { await navigator.clipboard.writeText(codeEl.value); $('btnCopy').textContent = '✓ 已复制';
+        setTimeout(() => $('btnCopy').textContent = '复制', 1200); } catch (_) {}
+};
+$('btnFit').onclick    = fitView;
+$('btnReset').onclick  = () => { if (!state.vbW) return; state.scale = 1; fitView(); };
+$('btnPNG').onclick    = exportPNG;
+$('pngScale').onchange = e => localStorage.setItem('mtp.pngScale', e.target.value);
+$('pngTransparent').onchange = e => {
+  localStorage.setItem('mtp.pngTransparent', e.target.checked ? '1' : '');
+  $('pngBg').disabled = e.target.checked;           // 透明底优先，底色置灰
+  syncStageBg();
+};
+$('pngBg').onchange = e => { localStorage.setItem('mtp.pngBg', e.target.value); syncStageBg(); };
+
+/* ================= 分割条拖动 ================= */
+const split = $('split');
+let splitting = null;
+split.addEventListener('pointerdown', e => {
+  splitting = { axis: window.innerWidth > 860 ? 'x' : 'y', p: e.clientX, q: e.clientY };
+  split.setPointerCapture(e.pointerId);
+  e.preventDefault();
+});
+split.addEventListener('pointermove', e => {
+  if (!splitting) return;
+  if (splitting.axis === 'x') {
+    const pct = (e.clientX / window.innerWidth) * 100;
+    if (pct > 18 && pct < 82) document.documentElement.style.setProperty('--split', pct + '%');
+  } else {
+    const pct = (e.clientY / window.innerHeight) * 100;
+    if (pct > 18 && pct < 82) document.documentElement.style.setProperty('--split', pct + '%');
+  }
+});
+['pointerup', 'pointercancel'].forEach(ev => split.addEventListener(ev, () => {
+  if (splitting) {
+    localStorage.setItem('mtp.split', document.documentElement.style.getPropertyValue('--split') || '');
+    splitting = null;
+  }
+}));
+
+window.addEventListener('resize', fitSoon);
+
+/* ================= 测试钩子（自动化验证用） =================
+   __mtp.render(code) / __mtp.exportBlob(mult, transparent) / __mtp.setZoom(s) / __mtp.fit() / __mtp.state */
+window.__mtp = {
+  render: renderDiagram,
+  exportBlob: exportPNGBlob,
+  setZoom: s => { state.scale = s; applyTransform(); },
+  fit: fitView,
+  state,
+};
+
+/* ================= 启动 ================= */
+(function init() {
+  const savedScale = localStorage.getItem('mtp.pngScale');
+  if (savedScale) $('pngScale').value = savedScale;
+  const savedBg = localStorage.getItem('mtp.pngBg');
+  if (savedBg) $('pngBg').value = savedBg;
+  if (localStorage.getItem('mtp.pngTransparent') === '1') {
+    $('pngTransparent').checked = true;
+    $('pngBg').disabled = true;
+  }
+  syncStageBg();
+  const savedSplit = localStorage.getItem('mtp.split');
+  if (savedSplit) document.documentElement.style.setProperty('--split', savedSplit);
+  codeEl.value = localStorage.getItem('mtp.code') ?? EXAMPLE;
+  renderDiagram();
+})();
+</script>
+</body>
+</html>
