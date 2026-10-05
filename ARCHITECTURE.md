@@ -10,8 +10,8 @@
 | 粘贴代码到 Code 页，预览页渲染 | 左右分栏布局；`textarea#code` 输入 400ms 防抖后 `mermaid.parse` + `mermaid.render`；Ctrl+Enter 立即渲染 |
 | 预览图可缩放、拖拽 | `#stage`（overflow:hidden 视口）+ `#viewport`（CSS `translate+scale`，origin 左上）；滚轮以鼠标位置为不动点缩放；Pointer Events 拖拽；双击/按钮适应窗口；1:1 按钮 |
 | 下载 PNG 且可选位置 | SVG → `data:image/svg+xml` → `<img>` → Canvas（倍率缩放）→ `toBlob` → `<a download>` 触发浏览器另存为对话框（用户自选位置） |
-| 导出背景色（新增） | `input[type=color]` 底色选择器，Canvas `fillRect` 填色；透明底勾选优先并联动置灰；选择存 localStorage |
-| 所见即所得背景（新增） | 预览画布背景实时同步所选底色（`syncStageBg`，改色/透明/启动三处触发）；透明底时预览显示棋盘格占位，导出 PNG 为真透明 |
+| 导出背景色 | `input[type=color]` 底色选择器，Canvas `fillRect` 填色；透明底勾选优先并联动置灰；选择存 localStorage |
+| 所见即所得背景 | 预览画布背景实时同步所选底色（`syncStageBg`，改色/透明/启动三处触发）；透明底时预览显示棋盘格占位，导出 PNG 为真透明 |
 | Mermaid 语法参考 | 内置 mermaid v11.4.1 官方 UMD（`mermaid.min.js` 本地 vendored，2.57MB，离线可用），支持全部官方图型与语法 |
 
 ## 2. 形态选型（为什么是单文件 HTML）
@@ -109,4 +109,4 @@ MermaidToPng/
 
 ## 10. 维护
 
-升级 mermaid：覆盖 `mermaid.min.js` 即可，或运行 `python fetch_mermaid.py`（自动尝试 npmmirror 直连 + jsdelivr/unpkg 走 Clash 7897 代理）。
+升级 mermaid：覆盖 `mermaid.min.js` 即可，或运行 `python fetch_mermaid.py`（自动尝试 npmmirror 直连 + jsdelivr/unpkg 走代理）。
