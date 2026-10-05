@@ -2572,10 +2572,32 @@ const EXAMPLE = `graph LR
      与管道边标签 |...|；已加引号的标签原样跳过；%% 注释、style/classDef
      等语句行不碰；textarea 里的原文不修改，只修正喂给 mermaid 的副本。 */
 function tolerantMermaid(src) {
+  // --- 类型门控：形状容错只对 flowchart/graph 生效；mindmap/timeline/sequenceDiagram/
+  //     pie/gantt 等其它图型（含新版 Mermaid 语法）逐字放行，避免被流程图规则改坏。
+  //     探测前先剥掉 %%{...}%% 指令块（init 可能跨多行，否则会误把指令行当图型行）。
+  //     无图型行的裸片段（mermaid 本就无法渲染）随未知类型一并逐字放行，不强行容错。
+  const probe = src.replace(/%%\{[\s\S]*?\}%%/g, '');
+  let dtypeLine = '';
+  for (const l of probe.split('\n')) { const t = l.trim(); if (!t || t.startsWith('%%')) continue; dtypeLine = t; break; }
+  if (dtypeLine && !/^(flowchart|graph)\b/i.test(dtypeLine)) return src;
+  let noteSeq = 0;
   return src.split('\n').map(function (line) {
     const t = line.trim();
     if (t.startsWith('%%')) return line;                                   // 注释 / init 指令
     if (/^(style|classDef|class|linkStyle|subgraph|end|direction|click|call)\b/.test(t)) return line;
+    // --- sequence 风格 note 语句 → 流程图注释节点 + 虚线关联（flowchart 本身不支持 note）。
+    //     「note over A[,B…]: 文本」/「note left of A: 文本」/「note right of A: 文本」
+    const nm = t.match(/^note\s+(?:over|left\s+of|right\s+of)\s+([^:]+?)\s*:\s*(.+)$/i);
+    if (nm) {
+      const refs = nm[1].split(',').map(s => s.trim()).filter(Boolean);
+      const text = nm[2].trim().replace(/"/g, '#quot;');
+      if (!refs.length || !text) return line;
+      const id = 'MTPNOTE' + (noteSeq++);
+      const indent = line.match(/^\s*/)[0];
+      const out = [indent + id + '["' + text + '"]'];
+      for (const r of refs) out.push(indent + id + ' -.-> ' + r);
+      return out.join('\n');
+    }
     const OPEN = {'[': ']', '(': ')', '{': '}'};
     let out = '', i = 0;
     const n = line.length;
