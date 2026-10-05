@@ -2445,6 +2445,8 @@ globalThis.mermaid = globalThis.__esbuild_esm_mermaid.default;
   #stage.grabbing{cursor:grabbing}
   #viewport{position:absolute;top:0;left:0;transform-origin:0 0;will-change:transform}
   #viewport svg{display:block;overflow:visible}
+  /* HTML 模式预览宿主：pointer-events 穿透到 stage，缩放/拖拽对 iframe 同样生效 */
+  #viewport iframe{border:0;display:block;background:transparent;pointer-events:none}
   #hint{
     position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
     color:var(--muted);font-size:14px;pointer-events:none;user-select:none;
@@ -2465,7 +2467,7 @@ globalThis.mermaid = globalThis.__esbuild_esm_mermaid.default;
 
 <header>
   <div class="logo">MermaidToPng</div>
-  <span class="dim" style="font-size:12px;color:var(--muted)">粘贴代码 → 实时预览 → 导出 PNG</span>
+  <span class="dim" style="font-size:12px;color:var(--muted)">粘贴 Mermaid / SVG / HTML → 实时预览 → 导出 PNG</span>
   <div class="spacer"></div>
   <button id="btnExample" title="插入示例流程图">示例</button>
   <button id="btnCopy"   title="复制代码">复制</button>
@@ -2478,10 +2480,16 @@ globalThis.mermaid = globalThis.__esbuild_esm_mermaid.default;
     <div class="card">
       <div class="card-h">
         <span class="tag">CODE</span>
+        <select id="modeSel" title="语法模式：自动检测 / Mermaid / SVG / HTML">
+          <option value="auto" selected>自动检测</option>
+          <option value="mermaid">Mermaid</option>
+          <option value="svg">SVG</option>
+          <option value="html">HTML</option>
+        </select>
         <span class="dim">Ctrl+Enter 立即渲染 · 自动保存本地</span>
       </div>
       <textarea id="code" spellcheck="false"
-        placeholder="在此粘贴 Mermaid 代码，例如：&#10;graph TD&#10;  A[开始] --> B[结束]"></textarea>
+        placeholder="在此粘贴 Mermaid / SVG / HTML 代码（自动识别），例如：&#10;graph TD&#10;  A[开始] --> B[结束]"></textarea>
       <div id="err"></div>
     </div>
   </section>
@@ -2514,7 +2522,7 @@ globalThis.mermaid = globalThis.__esbuild_esm_mermaid.default;
       </div>
       <div id="stage">
         <div id="viewport"></div>
-        <div id="hint">左侧粘贴 Mermaid 代码开始 · 滚轮缩放 / 拖拽移动 / 双击适应</div>
+        <div id="hint">左侧粘贴 Mermaid / SVG / HTML 代码开始 · 滚轮缩放 / 拖拽移动 / 双击适应</div>
       </div>
     </div>
   </section>
@@ -2552,7 +2560,8 @@ const stage = $('stage'), viewport = $('viewport'), codeEl = $('code'),
 const state = {
   scale: 1, tx: 0, ty: 0,          // 视图变换（translate + scale，origin 左上）
   vbW: 0, vbH: 0,                  // 当前图自然尺寸（viewBox）
-  lastRawSvg: null,                // 渲染成功的原始 SVG 字符串（导出用）
+  lastRawSvg: null,                // 渲染成功的原始 SVG 字符串（导出用；HTML 模式为 foreignObject 包装串）
+  mode: '',                        // 当前生效语法：mermaid | svg | html
   seq: 0, error: '', dragging: null,
 };
 
@@ -2564,6 +2573,39 @@ const EXAMPLE = `graph LR
   E --> F[导出高清 PNG]
   style A fill:#7c3aed,color:#fff
   style F fill:#06b6d4,color:#fff`;
+
+const SVG_EXAMPLE = `<svg xmlns="http://www.w3.org/2000/svg" width="420" height="180" viewBox="0 0 420 180">
+  <rect x="8" y="8" width="404" height="164" rx="18" fill="#7c3aed"/>
+  <text x="210" y="82" text-anchor="middle" font-family="Segoe UI, Microsoft YaHei" font-size="24" font-weight="700" fill="#ffffff">粘贴 SVG 代码</text>
+  <text x="210" y="118" text-anchor="middle" font-family="Segoe UI, Microsoft YaHei" font-size="15" fill="#ddd6fe">直接渲染 · 缩放预览 · 导出高清 PNG</text>
+</svg>`;
+
+const HTML_EXAMPLE = `<div style="font-family:'Segoe UI','Microsoft YaHei',sans-serif;background:linear-gradient(135deg,#7c3aed,#06b6d4);color:#fff;padding:34px 46px;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.25);">
+  <div style="font-size:26px;font-weight:700;letter-spacing:1px;">粘贴 HTML 代码</div>
+  <div style="font-size:14px;opacity:.85;margin-top:10px;">内联样式 / 完整文档均可 · 预览缩放 · 导出高清 PNG</div>
+</div>`;
+
+/* ================= 语法模式：自动检测 / 手动选择 =================
+   Mermaid 代码不会以 "<" 开头（graph/flowchart/sequenceDiagram/%% 注释等），
+   因此 "<" 开头即可断定是标记语言：首个有效标签为 <svg → SVG，否则按 HTML
+   （完整文档或片段均可）。前导注释 / XML 声明 / DOCTYPE 不参与判定。 */
+function detectMode(src) {
+  let t = String(src ?? '').replace(/^\uFEFF/, '').trim();
+  for (let i = 0; i < 5; i++) {
+    if (/^<!--/.test(t)) { const e = t.indexOf('-->'); if (e === -1) { t = ''; break; } t = t.slice(e + 3).trim(); continue; }
+    if (/^<\?/.test(t))  { const e = t.indexOf('?>');   if (e === -1) { t = ''; break; } t = t.slice(e + 2).trim(); continue; }
+    if (/^<!doctype/i.test(t)) { const e = t.indexOf('>'); if (e === -1) { t = ''; break; } t = t.slice(e + 1).trim(); continue; }
+    break;
+  }
+  if (/^<svg[\s>]/i.test(t)) return 'svg';
+  if (/^</.test(t)) return 'html';
+  return 'mermaid';
+}
+function modeOf(src) {
+  const sel = $('modeSel') ? $('modeSel').value : 'auto';
+  return sel === 'auto' ? detectMode(src) : sel;
+}
+const MODE_LABEL = { mermaid: 'Mermaid', svg: 'SVG', html: 'HTML' };
 
 /* ================= 语法容错 =================
    未加英文双引号的节点标签若含特殊字符（[ ] ( ) { } < > | - 等），
@@ -2658,23 +2700,33 @@ function tolerantMermaid(src) {
   }).join('\n');
 }
 
-/* ================= 渲染 ================= */
+/* ================= 渲染 =================
+   统一入口：按语法模式分派。三个分支成功后都保证
+   state.lastRawSvg（导出数据源）与 state.vbW/vbH（自然尺寸）就位。 */
 async function renderDiagram(raw) {
-  const code = tolerantMermaid((raw ?? codeEl.value).trim());
+  const src = String(raw ?? codeEl.value ?? '').trim();
   state.error = '';
-  if (!code) {
-    state.lastRawSvg = null;
+  if (!src) {
+    state.lastRawSvg = null; state.mode = '';
     viewport.innerHTML = '';
     hint.style.display = 'flex';
     sizeInfo.textContent = '';
     return { ok: false, empty: true };
   }
+  state.mode = modeOf(src);
+  if (state.mode === 'svg')  return renderSVG(src);
+  if (state.mode === 'html') return renderHTML(src);
+  return renderMermaid(src);
+}
+
+async function renderMermaid(src) {
+  const code = tolerantMermaid(src);
   try {
     await mermaid.parse(code);                       // 语法预检，抛错则不覆盖旧图
     const { svg } = await mermaid.render('mtpGraph' + (state.seq++), code);
     state.lastRawSvg = svg;
-    mountSVG(svg);
-    return { ok: true, width: state.vbW, height: state.vbH };
+    mountSVG(svg, false);
+    return { ok: true, mode: 'mermaid', width: state.vbW, height: state.vbH };
   } catch (e) {
     state.error = (e && (e.str || e.message)) || String(e);
     showError();
@@ -2682,27 +2734,158 @@ async function renderDiagram(raw) {
   }
 }
 
-function mountSVG(svgText) {
+function renderSVG(src) {
+  const cleaned = src.replace(/^\uFEFF/, '').replace(/^<\?xml[\s\S]*?\?>/i, '').trim();
+  let doc;
+  try { doc = new DOMParser().parseFromString(cleaned, 'image/svg+xml'); }
+  catch (e) { state.error = 'SVG 解析失败：' + (e && e.message); showError(); return { ok: false, error: state.error }; }
+  const perr = doc.querySelector('parsererror');
+  const root = doc.documentElement;
+  if (perr || !root || root.nodeName.toLowerCase() !== 'svg') {
+    state.error = 'SVG 解析失败：' + (perr ? perr.textContent.slice(0, 300) : '根元素不是 <svg>');
+    showError();
+    return { ok: false, error: state.error };
+  }
+  const svgText = new XMLSerializer().serializeToString(root);
+  state.lastRawSvg = svgText;
+  mountSVG(svgText, true);
+  // 把测得的自然尺寸写回根元素 width/height 再作为导出源，data:URL 渲染尺寸精确
+  try {
+    const el = viewport.querySelector('svg');
+    el.setAttribute('width', Math.round(state.vbW));
+    el.setAttribute('height', Math.round(state.vbH));
+    state.lastRawSvg = new XMLSerializer().serializeToString(el);
+  } catch (_) {}
+  return { ok: true, mode: 'svg', width: state.vbW, height: state.vbH };
+}
+
+/* ---- HTML 模式 ----
+   预览：srcdoc iframe（片段自动包装成最小文档；透明底所见即所得）。
+   HTML 没有自然尺寸——宽度先给工作宽 900，内容溢出则放宽重测（上限 3840），
+   高度按内容实测；片段用包裹元素的实际占位（inline-block 收缩），
+   完整文档用 body/根元素的边界与滚动尺寸取大。
+   导出：克隆文档包进 <foreignObject>，走与 Mermaid 相同的 SVG→img→Canvas 管线。
+   注意：外部资源（相对路径图片/网络图片/外链 CSS）在导出管线中不会加载，
+   需要的图片请用 base64 data URL 内联；<style> 内联样式不受影响。 */
+const HTML_WORK_W = 900, HTML_WORK_H = 800, HTML_MAX_W = 3840;
+
+function renderHTML(src) {
+  const isDoc = /<!doctype\s+html[\s>]|<html[\s>]/i.test(src);
+  const docHtml = isDoc ? src :
+    '<!DOCTYPE html><html><head><meta charset="utf-8">'
+    + '<style>html,body{margin:0;padding:0}body{font-family:\'Segoe UI\',\'Microsoft YaHei\',sans-serif}</style>'
+    + '</head><body><div id="mtpWrap" style="display:inline-block;vertical-align:top">' + src + '</div></body></html>';
+  state.lastRawSvg = null;
+  state.vbW = 0; state.vbH = 0;
+  state.scale = 1; state.tx = 0; state.ty = 0;
+  viewport.innerHTML = '';
+  hint.style.display = 'none';
+  errEl.style.display = 'none'; errEl.textContent = '';
+  const ifr = document.createElement('iframe');
+  ifr.id = 'htmlHost';
+  ifr.setAttribute('title', 'HTML 预览');
+  ifr.style.width = HTML_WORK_W + 'px';
+  ifr.style.height = HTML_WORK_H + 'px';
+  ifr.srcdoc = docHtml;
+  viewport.appendChild(ifr);
+  applyTransform();
+  ifr.addEventListener('load', () => {
+    let d = null;
+    try { d = ifr.contentDocument; } catch (_) {}
+    if (!d || !d.body) { state.error = 'HTML 预览初始化失败'; showError(); return; }
+    // 宽度：内容想要更宽（溢出工作宽）则放宽后重测，最多三轮
+    let w = HTML_WORK_W;
+    for (let i = 0; i < 3; i++) {
+      const sw = Math.max(d.documentElement.scrollWidth, d.body.scrollWidth);
+      if (sw <= w || w >= HTML_MAX_W) break;
+      w = Math.min(Math.max(sw, w + 1), HTML_MAX_W);
+      ifr.style.width = w + 'px';
+    }
+    let h;
+    const wrap = d.getElementById('mtpWrap');
+    if (wrap) {
+      const r = wrap.getBoundingClientRect();
+      w = Math.max(1, Math.ceil(r.width));
+      h = Math.max(1, Math.ceil(r.height));
+    } else {
+      // 完整文档：body 实际边界优先（尊重显式宽高），0 时回退容器尺寸；
+      // 仅当内容真溢出容器（scroll 尺寸超过 client 尺寸）才按内容扩展
+      const br = d.body.getBoundingClientRect();
+      const cw = d.documentElement.clientWidth, chh = d.documentElement.clientHeight;
+      const sw = Math.max(d.documentElement.scrollWidth, d.body.scrollWidth);
+      const sh = Math.max(d.documentElement.scrollHeight, d.body.scrollHeight);
+      w = Math.ceil(br.width) || cw;
+      h = Math.ceil(br.height) || Math.ceil(sh);
+      if (sw > cw) w = Math.min(Math.max(w, sw), HTML_MAX_W);
+      if (sh > chh) h = Math.min(Math.max(h, sh), 16384);
+    }
+    ifr.style.width = w + 'px';
+    ifr.style.height = h + 'px';
+    state.vbW = w; state.vbH = h;
+    sizeInfo.textContent = MODE_LABEL.html + ' · ' + w + '×' + h + ' px';
+    try {
+      state.lastRawSvg = buildHTMLExportSvg(d, w, h);
+    } catch (e) {
+      state.error = 'HTML 导出数据构建失败：' + (e && e.message);
+      showError();
+      return;
+    }
+    applyTransform();
+    fitSoon();                                       // 新内容自动适应窗口
+  }, { once: true });
+  return { ok: true, mode: 'html', pending: true };
+}
+
+function buildHTMLExportSvg(doc, w, h) {
+  const NS = 'http://www.w3.org/2000/svg';
+  const clone = doc.documentElement.cloneNode(true);
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('xmlns', NS);
+  svg.setAttribute('width', w);
+  svg.setAttribute('height', h);
+  svg.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
+  const fo = document.createElementNS(NS, 'foreignObject');
+  fo.setAttribute('x', '0'); fo.setAttribute('y', '0');
+  fo.setAttribute('width', '100%'); fo.setAttribute('height', '100%');
+  fo.appendChild(clone);
+  svg.appendChild(fo);
+  return new XMLSerializer().serializeToString(svg);
+}
+
+function mountSVG(svgText, userSvg) {
   viewport.innerHTML = svgText;
   hint.style.display = 'none';
   errEl.style.display = 'none';
   errEl.textContent = '';          // 清掉上次失败的残留错误文本，避免误判
   const el = viewport.querySelector('svg');
-  if (!el) return;
-  // 先从 viewBox 取自然尺寸，再写回显式像素宽高。
+  if (!el) return { w: state.vbW, h: state.vbH };
+  // 自然尺寸优先级：显式像素宽高 → viewBox → getBBox 兜底。
   // 只删 mermaid 自带 width/height 而不补显式尺寸的话，SVG 在 auto 尺寸的
   // absolute 容器里百分比解析为 0×0 —— 屏幕上什么都看不见（导出不受影响）。
   let w = 800, h = 600;
-  const vb = el.viewBox && el.viewBox.baseVal;
-  if (vb && vb.width && vb.height) { w = vb.width; h = vb.height; }
-  else { try { const b = el.getBBox(); w = b.width; h = b.height; } catch (_) {} }
-  el.removeAttribute('width'); el.removeAttribute('height'); el.removeAttribute('style');
+  const wv = el.width && el.width.baseVal, hv = el.height && el.height.baseVal;
+  if (wv && hv && wv.unitType === 1 && hv.unitType === 1 && wv.value > 0 && hv.value > 0) {
+    w = wv.value; h = hv.value;
+  } else {
+    const vb = el.viewBox && el.viewBox.baseVal;
+    if (vb && vb.width && vb.height) { w = vb.width; h = vb.height; }
+    else { try { const b = el.getBBox(); w = b.width; h = b.height; } catch (_) {} }
+  }
+  el.removeAttribute('width'); el.removeAttribute('height');
+  if (userSvg) {
+    // 用户 SVG：只剥尺寸相关键，保留根节点其余样式（背景、字体等所见即所得）
+    el.style.removeProperty('width'); el.style.removeProperty('height'); el.style.removeProperty('max-width');
+  } else {
+    el.removeAttribute('style');
+  }
   el.style.display = 'block'; el.style.overflow = 'visible';
   el.style.width = w + 'px'; el.style.height = h + 'px';
   state.vbW = w; state.vbH = h;
-  sizeInfo.textContent = `${Math.round(w)}×${Math.round(h)} px`;
+  sizeInfo.textContent = (MODE_LABEL[state.mode] ? MODE_LABEL[state.mode] + ' · ' : '')
+                       + `${Math.round(w)}×${Math.round(h)} px`;
   applyTransform();
   fitSoon();                                         // 新图自动适应窗口
+  return { w, h };
 }
 
 function showError() {
@@ -2762,26 +2945,45 @@ stage.addEventListener('dblclick', fitView);
    SVG → data:URL → <img> → canvas(倍率缩放) → toBlob → a[download]。
    浏览器对 a[download] 弹"另存为"，用户即可选择保存位置（Chrome/Edge 需
    设置"每次下载前询问保存位置"，或按住文件拖出；Firefox 默认弹窗）。 */
+function svgImgSrc(svgText) {
+  const dataUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgText);
+  // 超长内容（大 HTML 序列化后）data:URL 可能被浏览器拒绝加载 → 兜底改走 blob:URL
+  if (dataUrl.length <= 1500000) return { url: dataUrl, blob: false };
+  return { url: URL.createObjectURL(new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' })), blob: true };
+}
 async function exportPNGBlob(mult = 2, transparent = false, bgColor = '#ffffff') {
-  if (!state.lastRawSvg) throw new Error('没有可导出的图：请先渲染成功的 Mermaid 代码');
+  if (!state.lastRawSvg) throw new Error('没有可导出的内容：请先渲染成功的 Mermaid / SVG / HTML 代码');
+  // Canvas 上限保护（Chrome）：单边 16384 / 总像素约 2^28，超限自动降倍率而不是导出空白
+  let m = Math.max(1, Math.round(mult) || 1);
+  const MAXSIDE = 16384, MAXAREA = 1 << 28;
+  while (m > 1 && (state.vbW * m > MAXSIDE || state.vbH * m > MAXSIDE
+                  || state.vbW * state.vbH * m * m > MAXAREA)) m--;
+  const src = svgImgSrc(state.lastRawSvg);
   const img = new Image();
-  img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(state.lastRawSvg);
-  await new Promise((res, rej) => { img.onload = res; img.onerror = () => rej(new Error('SVG 加载失败')); });
+  img.src = src.url;
+  try {
+    await new Promise((res, rej) => { img.onload = res; img.onerror = () => rej(new Error('内容加载失败（HTML 含外部资源时无法进入导出管线）')); });
+  } finally {
+    if (src.blob) URL.revokeObjectURL(src.url);
+  }
   const c = document.createElement('canvas');
-  c.width = Math.max(1, Math.round(state.vbW * mult));
-  c.height = Math.max(1, Math.round(state.vbH * mult));
+  c.width = Math.max(1, Math.round(state.vbW * m));
+  c.height = Math.max(1, Math.round(state.vbH * m));
   const ctx = c.getContext('2d');
   if (!transparent) { ctx.fillStyle = bgColor || '#ffffff'; ctx.fillRect(0, 0, c.width, c.height); }
   ctx.drawImage(img, 0, 0, c.width, c.height);
-  return await new Promise(res => c.toBlob(res, 'image/png'));
+  const blob = await new Promise(res => c.toBlob(res, 'image/png'));
+  if (!blob) throw new Error('PNG 编码失败（内容尺寸可能超出浏览器 Canvas 上限，请降低导出倍率）');
+  return blob;
 }
 async function exportPNG() {
-  if (!state.lastRawSvg) { alert('请先输入正确的 Mermaid 代码'); return; }
+  if (!state.lastRawSvg) { alert('请先输入可渲染的 Mermaid / SVG / HTML 代码'); return; }
   try {
     const blob = await exportPNGBlob(+$('pngScale').value, $('pngTransparent').checked, $('pngBg').value);
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = 'mermaid-' + new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-') + '.png';
+    const prefix = state.mode === 'svg' ? 'svg' : state.mode === 'html' ? 'html' : 'mermaid';
+    a.download = prefix + '-' + new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-') + '.png';
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 4000);
   } catch (e) { alert('导出失败：' + e.message); }
@@ -2811,7 +3013,12 @@ codeEl.addEventListener('keydown', e => {
     localStorage.setItem('mtp.code', codeEl.value);
   }
 });
-$('btnExample').onclick = () => { codeEl.value = EXAMPLE; localStorage.setItem('mtp.code', EXAMPLE); renderDiagram(); };
+$('modeSel').onchange = e => { localStorage.setItem('mtp.mode', e.target.value); renderDiagram(); };
+$('btnExample').onclick = () => {
+  const m = $('modeSel').value;
+  const text = m === 'svg' ? SVG_EXAMPLE : m === 'html' ? HTML_EXAMPLE : EXAMPLE;
+  codeEl.value = text; localStorage.setItem('mtp.code', text); renderDiagram();
+};
 $('btnClear').onclick  = () => { codeEl.value = ''; localStorage.setItem('mtp.code', ''); renderDiagram(); codeEl.focus(); };
 $('btnCopy').onclick   = async () => {
   try { await navigator.clipboard.writeText(codeEl.value); $('btnCopy').textContent = '✓ 已复制';
@@ -2856,17 +3063,21 @@ split.addEventListener('pointermove', e => {
 window.addEventListener('resize', fitSoon);
 
 /* ================= 测试钩子（自动化验证用） =================
-   __mtp.render(code) / __mtp.exportBlob(mult, transparent) / __mtp.setZoom(s) / __mtp.fit() / __mtp.state */
+   __mtp.render(code) / __mtp.exportBlob(mult, transparent) / __mtp.setZoom(s) / __mtp.fit() / __mtp.state
+   __mtp.detect(code) → 语法自动检测结果 */
 window.__mtp = {
   render: renderDiagram,
   exportBlob: exportPNGBlob,
   setZoom: s => { state.scale = s; applyTransform(); },
   fit: fitView,
+  detect: detectMode,
   state,
 };
 
 /* ================= 启动 ================= */
 (function init() {
+  const savedMode = localStorage.getItem('mtp.mode');
+  if (savedMode) $('modeSel').value = savedMode;
   const savedScale = localStorage.getItem('mtp.pngScale');
   if (savedScale) $('pngScale').value = savedScale;
   const savedBg = localStorage.getItem('mtp.pngBg');

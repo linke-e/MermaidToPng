@@ -1,2 +1,2 @@
 @echo off
-start "" "%~dp0MermaidToPng-standalone.html"
+start "" "%~dp0MermaidToPng.html"
