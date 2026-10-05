@@ -2472,16 +2472,25 @@ globalThis.mermaid = globalThis.__esbuild_esm_mermaid.default;
     -webkit-backdrop-filter:blur(18px) saturate(1.5);
     box-shadow:inset 0 1px 0 rgba(255,255,255,.14);
   }
-  /* 三个主标题（Mermaid / CODE / PREVIEW）：白字+差值混合，逐像素随其覆盖的背景颜色反色 */
+  /* 三个主标题（Mermaid / CODE / PREVIEW）用图片突出色（--vivid） */
   body.has-bg .logo{
     background:none;-webkit-background-clip:initial;background-clip:initial;
-    color:#fff;mix-blend-mode:difference;
+    color:var(--vivid,#e6e9f2);
   }
-  body.has-bg .card-h .tag{color:#fff;mix-blend-mode:difference}
-  /* 其他文字：用图片主色（--dominant） */
+  body.has-bg .card-h .tag{color:var(--vivid,#06b6d4)}
+  /* 下载 PNG 主按钮：玻璃化 */
+  body.has-bg button.primary{
+    background:rgba(16,20,34,.40);
+    border:1px solid rgba(255,255,255,.20);
+    backdrop-filter:blur(18px) saturate(1.5);
+    -webkit-backdrop-filter:blur(18px) saturate(1.5);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.14);
+  }
+  body.has-bg button.primary:hover{filter:none;background:rgba(255,255,255,.14)}
+  /* 其他文字：用图片辅助色（--aux） */
   body.has-bg button, body.has-bg select, body.has-bg textarea,
   body.has-bg .dim, body.has-bg label.chk, body.has-bg #err, body.has-bg #hint{
-    color:var(--dominant,var(--fg));
+    color:var(--aux,var(--fg));
   }
 
   /* 外观设置面板 */
@@ -2516,7 +2525,7 @@ globalThis.mermaid = globalThis.__esbuild_esm_mermaid.default;
 <header>
   <div class="logo">MermaidToPng</div>
   <div class="spacer"></div>
-  <button id="btnAppearance" title="外观设置：背景图 / 填充 / 缩放 / 模糊 / 遮罩">外观</button>
+  <button id="btnAppearance" title="外观设置 v5（若颜色行为异常，请 Ctrl+F5 强制刷新加载新版）">外观</button>
 </header>
 
 <div id="bgLayer" aria-hidden="true"><img id="bgImg" alt=""></div>
@@ -3088,11 +3097,11 @@ function syncStageBg() {
   stage.style.background = $('pngTransparent').checked ? CHECKER_BG : ($('pngBg').value || '#ffffff');
 }
 
-/* ================= 外观设置（背景图 / 玻璃 / 差值变色标题 / 主色文字） ================= */
+/* ================= 外观设置（背景图 / 玻璃 / 突出色标题 / 辅助色文字） ================= */
 const bgLayer = $('bgLayer'), bgImg = $('bgImg'), bgMask = $('bgMask'),
       apPanel = $('appearancePanel');
 
-const APPEAR_DEFAULT = { fit: 'cover', zoom: 100, blur: 0, mask: 35, dataUrl: null, dominant: null };
+const APPEAR_DEFAULT = { fit: 'cover', zoom: 100, blur: 0, mask: 35, dataUrl: null, vivid: null, aux: null };
 let appearance = Object.assign({}, APPEAR_DEFAULT);
 let apSaveTimer = null;
 
@@ -3106,7 +3115,8 @@ function applyAppearance() {
   document.body.classList.toggle('has-bg', has);
   if (!has) {
     bgImg.removeAttribute('src');
-    document.documentElement.style.removeProperty('--dominant');
+    document.documentElement.style.removeProperty('--vivid');
+    document.documentElement.style.removeProperty('--aux');
     return;
   }
   if (bgImg.getAttribute('src') !== appearance.dataUrl) bgImg.src = appearance.dataUrl;
@@ -3114,12 +3124,14 @@ function applyAppearance() {
   bgImg.style.transform = 'scale(' + (appearance.zoom / 100) + ')';
   bgLayer.style.filter = appearance.blur > 0 ? 'blur(' + appearance.blur + 'px)' : 'none';
   bgMask.style.opacity = String(appearance.mask / 100);
-  if (appearance.dominant) {
-    document.documentElement.style.setProperty('--dominant', appearance.dominant);
+  if (appearance.vivid && appearance.aux) {
+    document.documentElement.style.setProperty('--vivid', appearance.vivid);
+    document.documentElement.style.setProperty('--aux', appearance.aux);
   } else {
-    extractDominant(appearance.dataUrl).then(c => {
-      appearance.dominant = c;
-      document.documentElement.style.setProperty('--dominant', c);
+    extractPalette(appearance.dataUrl).then(p => {
+      appearance.vivid = p.vivid; appearance.aux = p.aux;
+      document.documentElement.style.setProperty('--vivid', p.vivid);
+      document.documentElement.style.setProperty('--aux', p.aux);
       scheduleAppearanceSave();
     }).catch(() => {});
   }
@@ -3136,42 +3148,6 @@ function scheduleAppearanceSave() {
   }, 200);
 }
 
-/* 图片主色：48×48 采样 + 桶量化 + 饱和度加权（避免灰白黑主导），过暗自动提亮。
-   标题颜色不走静态提取——标题用白字+差值混合，逐像素随覆盖的背景反色 */
-function extractDominant(dataUrl) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      try {
-        const n = 48, c = document.createElement('canvas');
-        c.width = n; c.height = n;
-        const ctx = c.getContext('2d', { willReadFrequently: true });
-        ctx.drawImage(img, 0, 0, n, n);
-        const d = ctx.getImageData(0, 0, n, n).data;
-        const buckets = new Map();
-        for (let i = 0; i < d.length; i += 4) {
-          const r = d[i], g = d[i + 1], b = d[i + 2];
-          if (d[i + 3] < 128) continue;
-          const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
-          const w = (mx ? (mx - mn) / mx : 0) + 0.15;
-          const key = ((r >> 5) << 6) | ((g >> 5) << 3) | (b >> 5);
-          const t = buckets.get(key) || { r: 0, g: 0, b: 0, w: 0 };
-          t.r += r * w; t.g += g * w; t.b += b * w; t.w += w;
-          buckets.set(key, t);
-        }
-        let best = null;
-        for (const t of buckets.values()) if (!best || t.w > best.w) best = t;
-        if (!best || best.w === 0) { reject(new Error('无有效像素')); return; }
-        // 桶均值是 0-255 域，归一化后再进 HSL（rgbToHsl 期望 0-1 输入）
-        let [h, s, l] = rgbToHsl(best.r / best.w / 255, best.g / best.w / 255, best.b / best.w / 255);
-        if (l < 0.45) l = 0.6;
-        resolve(hslToRgbStr(h, s, l));
-      } catch (e) { reject(e); }
-    };
-    img.onerror = () => reject(new Error('图片加载失败'));
-    img.src = dataUrl;
-  });
-}
 function rgbToHsl(r, g, b) {
   const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2;
   if (mx === mn) return [0, 0, l];
@@ -3191,6 +3167,84 @@ function hslToRgbStr(h, s, l) {
   return `rgb(${f(0)},${f(8)},${f(4)})`;
 }
 
+/* 图片突出色+辅助色：48×48 采样 + 桶量化。
+   突出色 vivid = 支持度≥2% 的桶中饱和度最高者（图里最跳的颜色），灰图回退主色；
+   辅助色 aux   = 同候选集中与主色、突出色色相均不接近(Δh≥0.12)的加权占比最高者，
+                  单色图找不到时回退主色降饱和提亮；过暗统一提亮保证可读 */
+function extractPalette(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const n = 48, c = document.createElement('canvas');
+        c.width = n; c.height = n;
+        const ctx = c.getContext('2d', { willReadFrequently: true });
+        ctx.drawImage(img, 0, 0, n, n);
+        const d = ctx.getImageData(0, 0, n, n).data;
+        const buckets = new Map();
+        let total = 0;
+        for (let i = 0; i < d.length; i += 4) {
+          const r = d[i], g = d[i + 1], b = d[i + 2];
+          if (d[i + 3] < 128) continue;
+          total++;
+          const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+          const w = (mx ? (mx - mn) / mx : 0) + 0.15;
+          const key = ((r >> 5) << 6) | ((g >> 5) << 3) | (b >> 5);
+          const t = buckets.get(key) || { r: 0, g: 0, b: 0, w: 0, n: 0 };
+          t.r += r * w; t.g += g * w; t.b += b * w; t.w += w; t.n++;
+          buckets.set(key, t);
+        }
+        if (!buckets.size || !total) { reject(new Error('无有效像素')); return; }
+        // 桶均值是 0-255 域，归一化后再进 HSL（rgbToHsl 期望 0-1 输入）
+        const hslOf = t => rgbToHsl(t.r / t.w / 255, t.g / t.w / 255, t.b / t.w / 255);
+        const lite = l => (l < 0.45 ? 0.6 : l);
+        // 主色参照：加权最高的桶（辅助色要避开它的色相）
+        let bd = null;
+        for (const t of buckets.values()) if (!bd || t.w > bd.w) bd = t;
+        const [hd] = hslOf(bd);
+        // 突出色：有支持度的桶中饱和度最高（并列取支持度更大者）
+        let cand = [...buckets.values()].filter(t => t.n >= Math.max(6, total * 0.015));
+        if (!cand.length) cand = [...buckets.values()].sort((a, b) => b.n - a.n).slice(0, 5);
+        let bv = null, bs = -1;
+        for (const t of cand) {
+          const s = hslOf(t)[1];
+          if (s > bs + 1e-9 || (Math.abs(s - bs) <= 1e-9 && bv && t.n > bv.n)) { bs = s; bv = t; }
+        }
+        let vivid, hv;
+        if (bs < 0.15) {                       // 灰图无突出色，回退主色
+          const [h, s, l] = hslOf(bd);
+          vivid = hslToRgbStr(h, s, lite(l));
+          hv = h;
+        } else {
+          const [h, s, l] = hslOf(bv);
+          vivid = hslToRgbStr(h, s, lite(l));
+          hv = h;
+        }
+        // 辅助色：候选集中色相与主色、突出色均不接近的加权最高桶
+        const hueDist = (a, b) => Math.min(Math.abs(a - b), 1 - Math.abs(a - b));
+        let ba = null;
+        for (const t of cand) {
+          const [h, s] = hslOf(t);
+          if (s < 0.12) continue;                              // 跳过近灰桶
+          if (hueDist(h, hd) < 0.12 || hueDist(h, hv) < 0.12) continue;
+          if (!ba || t.w > ba.w) ba = t;
+        }
+        let aux;
+        if (ba) {
+          const [h, s, l] = hslOf(ba);
+          aux = hslToRgbStr(h, s, lite(l));
+        } else {                                               // 单色图：主色降饱和提亮做辅助
+          const [h, s] = hslOf(bd);
+          aux = hslToRgbStr(h, Math.min(s, 0.35), 0.72);
+        }
+        resolve({ vivid, aux });
+      } catch (e) { reject(e); }
+    };
+    img.onerror = () => reject(new Error('图片加载失败'));
+    img.src = dataUrl;
+  });
+}
+
 /* 上传背景图：压缩到最长边 1920、JPEG 85%（背景图不关心透明通道） */
 function loadBgFile(file) {
   if (!file || !/^image\//.test(file.type)) { alert('请选择图片文件'); return; }
@@ -3208,7 +3262,7 @@ function loadBgFile(file) {
       ctx.fillRect(0, 0, c.width, c.height);
       ctx.drawImage(img, 0, 0, c.width, c.height);
       appearance.dataUrl = c.toDataURL('image/jpeg', 0.85);
-      appearance.dominant = null;
+      appearance.vivid = null; appearance.aux = null;
       applyAppearance();
       scheduleAppearanceSave();
     };
@@ -3227,7 +3281,7 @@ document.addEventListener('pointerdown', e => {
 $('btnUploadBg').onclick = () => $('bgFile').click();
 $('bgFile').onchange = e => { loadBgFile(e.target.files && e.target.files[0]); e.target.value = ''; };
 $('btnRemoveBg').onclick = () => {
-  appearance.dataUrl = null; appearance.dominant = null;
+  appearance.dataUrl = null; appearance.vivid = null; appearance.aux = null;
   applyAppearance(); scheduleAppearanceSave();
 };
 $('apFit').onchange  = e => { appearance.fit  = e.target.value; applyAppearance(); scheduleAppearanceSave(); };
@@ -3309,11 +3363,12 @@ window.__mtp = {
   setZoom: s => { state.scale = s; applyTransform(); },
   fit: fitView,
   detect: detectMode,
-  applyBackground: dataUrl => { appearance.dataUrl = dataUrl; appearance.dominant = null; applyAppearance(); scheduleAppearanceSave(); },
+  applyBackground: dataUrl => { appearance.dataUrl = dataUrl; appearance.vivid = null; appearance.aux = null; applyAppearance(); scheduleAppearanceSave(); },
   state,
 };
 
 /* ================= 启动 ================= */
+console.info('[MermaidToPng] 外观系统 v5：标题=图片突出色 · 其他文字=图片辅助色 · 主按钮=玻璃；若行为异常请 Ctrl+F5 强刷');
 (function init() {
   try {
     const savedAp = JSON.parse(localStorage.getItem('mtp.appearance') || 'null');
