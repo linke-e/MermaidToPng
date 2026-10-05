@@ -2365,7 +2365,6 @@ globalThis.mermaid = globalThis.__esbuild_esm_mermaid.default;
     -webkit-background-clip:text;background-clip:text;color:transparent;
     white-space:nowrap;
   }
-  .logo::before{content:'◆ '}
   .spacer{flex:1}
   button{
     border:1px solid var(--panel-border);
@@ -2441,6 +2440,7 @@ globalThis.mermaid = globalThis.__esbuild_esm_mermaid.default;
       radial-gradient(rgba(255,255,255,.05) 1px, transparent 1px) 0 0/22px 22px,
       rgba(0,0,0,.18);
     touch-action:none;
+    user-select:none;-webkit-user-select:none;
   }
   #stage.grabbing{cursor:grabbing}
   #viewport{position:absolute;top:0;left:0;transform-origin:0 0;will-change:transform}
@@ -2451,6 +2451,54 @@ globalThis.mermaid = globalThis.__esbuild_esm_mermaid.default;
     position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
     color:var(--muted);font-size:14px;pointer-events:none;user-select:none;
   }
+
+  /* ── 外观系统：背景图层（参数化：填充/缩放/模糊/遮罩） ── */
+  #bgLayer{position:fixed;inset:-48px;z-index:-1;pointer-events:none;display:none}
+  #bgImg{width:100%;height:100%;object-fit:cover;object-position:center}
+  #bgMask{position:fixed;inset:0;z-index:-1;pointer-events:none;display:none;background:var(--bg);opacity:.35}
+  body.has-bg #bgLayer{display:block}
+  body.has-bg #bgMask{display:block}
+
+  /* 玻璃模糊（有背景图时启用）：标题栏 + 两个卡片顶部栏 */
+  body.has-bg header{
+    background:rgba(16,20,34,.42);
+    backdrop-filter:blur(18px) saturate(1.5);
+    -webkit-backdrop-filter:blur(18px) saturate(1.5);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.16), 0 4px 24px rgba(0,0,0,.35);
+  }
+  body.has-bg .card-h{
+    background:rgba(16,20,34,.40);
+    backdrop-filter:blur(18px) saturate(1.5);
+    -webkit-backdrop-filter:blur(18px) saturate(1.5);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.14);
+  }
+  /* 三个主标题（Mermaid / CODE / PREVIEW）用图片主色 */
+  body.has-bg .logo{
+    background:none;-webkit-background-clip:initial;background-clip:initial;
+    color:var(--dominant,#e6e9f2);
+  }
+  body.has-bg .card-h .tag{color:var(--dominant,#06b6d4)}
+  /* 其他文字：与背景图差值混合 */
+  body.has-bg button, body.has-bg select, body.has-bg textarea,
+  body.has-bg .dim, body.has-bg label.chk, body.has-bg #err, body.has-bg #hint{
+    mix-blend-mode:difference;
+  }
+
+  /* 外观设置面板 */
+  #appearancePanel{
+    position:fixed;top:56px;right:12px;z-index:50;width:286px;
+    background:rgba(18,22,36,.92);border:1px solid var(--panel-border);border-radius:14px;
+    backdrop-filter:blur(20px) saturate(1.4);-webkit-backdrop-filter:blur(20px) saturate(1.4);
+    padding:12px;display:none;flex-direction:column;gap:9px;
+    box-shadow:0 12px 40px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.12);
+  }
+  #appearancePanel.open{display:flex}
+  .ap-row{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:13px;color:var(--muted)}
+  .ap-row select,.ap-row input[type=number]{
+    width:158px;background:rgba(255,255,255,.05);color:var(--fg);
+    border:1px solid var(--panel-border);border-radius:8px;padding:5px 8px;font:inherit;font-size:13px;
+  }
+  .ap-row input[type=number]::-webkit-inner-spin-button{opacity:1}
 
   /* 分割条 */
   #split{cursor:col-resize;background:transparent;transition:background .15s}
@@ -2467,12 +2515,35 @@ globalThis.mermaid = globalThis.__esbuild_esm_mermaid.default;
 
 <header>
   <div class="logo">MermaidToPng</div>
-  <span class="dim" style="font-size:12px;color:var(--muted)">粘贴 Mermaid / SVG / HTML → 实时预览 → 导出 PNG</span>
   <div class="spacer"></div>
-  <button id="btnExample" title="插入示例流程图">示例</button>
-  <button id="btnCopy"   title="复制代码">复制</button>
-  <button id="btnClear"  title="清空代码">清空</button>
+  <button id="btnAppearance" title="外观设置：背景图 / 填充 / 缩放 / 模糊 / 遮罩">外观</button>
 </header>
+
+<div id="bgLayer" aria-hidden="true"><img id="bgImg" alt=""></div>
+<div id="bgMask" aria-hidden="true"></div>
+
+<div id="appearancePanel">
+  <div class="ap-row">
+    <span>背景图</span>
+    <span style="display:flex;gap:6px">
+      <button id="btnUploadBg">上传图片</button>
+      <button id="btnRemoveBg">移除</button>
+    </span>
+  </div>
+  <div class="ap-row">
+    <span>填充方式</span>
+    <select id="apFit">
+      <option value="cover">填满裁剪</option>
+      <option value="contain">完整显示</option>
+      <option value="fill">拉伸铺满</option>
+      <option value="none">居中原尺寸</option>
+    </select>
+  </div>
+  <div class="ap-row"><span>缩放 (%)</span><input type="number" id="apZoom" min="50" max="400" step="5" value="100"></div>
+  <div class="ap-row"><span>模糊程度 (px)</span><input type="number" id="apBlur" min="0" max="40" step="1" value="0"></div>
+  <div class="ap-row"><span>遮罩强度 (%)</span><input type="number" id="apMask" min="0" max="100" step="5" value="35"></div>
+  <input type="file" id="bgFile" accept="image/*" style="display:none">
+</div>
 
 <main>
   <!-- 左：Code 页 -->
@@ -2487,6 +2558,10 @@ globalThis.mermaid = globalThis.__esbuild_esm_mermaid.default;
           <option value="html">HTML</option>
         </select>
         <span class="dim">Ctrl+Enter 立即渲染 · 自动保存本地</span>
+        <span class="spacer"></span>
+        <button id="btnExample" title="插入示例流程图">示例</button>
+        <button id="btnCopy"   title="复制代码">复制</button>
+        <button id="btnClear"  title="清空代码">清空</button>
       </div>
       <textarea id="code" spellcheck="false"
         placeholder="在此粘贴 Mermaid / SVG / HTML 代码（自动识别），例如：&#10;graph TD&#10;  A[开始] --> B[结束]"></textarea>
@@ -2713,6 +2788,7 @@ async function renderDiagram(raw) {
     sizeInfo.textContent = '';
     return { ok: false, empty: true };
   }
+  hint.style.display = 'none';      // Code 区有内容即不显示引导提示（渲染失败也一样）
   state.mode = modeOf(src);
   if (state.mode === 'svg')  return renderSVG(src);
   if (state.mode === 'html') return renderHTML(src);
@@ -2853,11 +2929,25 @@ function buildHTMLExportSvg(doc, w, h) {
 }
 
 function mountSVG(svgText, userSvg) {
-  viewport.innerHTML = svgText;
-  hint.style.display = 'none';
-  errEl.style.display = 'none';
-  errEl.textContent = '';          // 清掉上次失败的残留错误文本，避免误判
-  const el = viewport.querySelector('svg');
+  viewport.innerHTML = '';
+  // 优先走 XML 解析 + importNode 挂载：innerHTML 的 HTML 解析器在 SVG 上下文里
+  // 遇到 <br/> 等 breakout 标签会强制退出 foreign content，SVG 从该处被截断，
+  // 其后所有元素脱离 SVG 命名空间而丢失（实测：4440 字符源码只挂上 1261 字符）。
+  let el = null;
+  try {
+    const doc = new DOMParser().parseFromString(svgText, 'image/svg+xml');
+    const perr = doc.querySelector('parsererror');
+    const root = doc.documentElement;
+    if (!perr && root && root.nodeName.toLowerCase() === 'svg'
+        && root.namespaceURI === 'http://www.w3.org/2000/svg') {
+      el = document.importNode(root, true);
+      viewport.appendChild(el);
+    }
+  } catch (_) {}
+  if (!el) {                                       // 兜底：非严格 XML 输入（如含 HTML 实体）走原路径
+    viewport.innerHTML = svgText;
+    el = viewport.querySelector('svg');
+  }
   if (!el) return { w: state.vbW, h: state.vbH };
   // 自然尺寸优先级：显式像素宽高 → viewBox → getBBox 兜底。
   // 只删 mermaid 自带 width/height 而不补显式尺寸的话，SVG 在 auto 尺寸的
@@ -2927,6 +3017,7 @@ stage.addEventListener('wheel', e => {
 
 stage.addEventListener('pointerdown', e => {
   if (e.button !== 0 || !state.lastRawSvg) return;
+  e.preventDefault();                       // 阻止拖动触发原生文本选择，避免拖图变成选字
   state.dragging = { x: e.clientX, y: e.clientY, tx: state.tx, ty: state.ty };
   stage.setPointerCapture(e.pointerId);
   stage.classList.add('grabbing');
@@ -2996,6 +3087,152 @@ const CHECKER_BG = 'repeating-conic-gradient(#262b3a 0% 25%, #171b26 0% 50%) 0 0
 function syncStageBg() {
   stage.style.background = $('pngTransparent').checked ? CHECKER_BG : ($('pngBg').value || '#ffffff');
 }
+
+/* ================= 外观设置（背景图 / 玻璃 / 主色 / 差值混合） ================= */
+const bgLayer = $('bgLayer'), bgImg = $('bgImg'), bgMask = $('bgMask'),
+      apPanel = $('appearancePanel');
+
+const APPEAR_DEFAULT = { fit: 'cover', zoom: 100, blur: 0, mask: 35, dataUrl: null, dominant: null };
+let appearance = Object.assign({}, APPEAR_DEFAULT);
+let apSaveTimer = null;
+
+function clampNum(v, mn, mx, def) {
+  v = parseFloat(v);
+  return isNaN(v) ? def : Math.min(mx, Math.max(mn, v));
+}
+
+function applyAppearance() {
+  const has = !!appearance.dataUrl;
+  document.body.classList.toggle('has-bg', has);
+  if (!has) {
+    bgImg.removeAttribute('src');
+    document.documentElement.style.removeProperty('--dominant');
+    return;
+  }
+  if (bgImg.getAttribute('src') !== appearance.dataUrl) bgImg.src = appearance.dataUrl;
+  bgImg.style.objectFit = appearance.fit;
+  bgImg.style.transform = 'scale(' + (appearance.zoom / 100) + ')';
+  bgLayer.style.filter = appearance.blur > 0 ? 'blur(' + appearance.blur + 'px)' : 'none';
+  bgMask.style.opacity = String(appearance.mask / 100);
+  if (appearance.dominant) {
+    document.documentElement.style.setProperty('--dominant', appearance.dominant);
+  } else {
+    extractDominant(appearance.dataUrl).then(c => {
+      appearance.dominant = c;
+      document.documentElement.style.setProperty('--dominant', c);
+      scheduleAppearanceSave();
+    }).catch(() => {});
+  }
+}
+
+function scheduleAppearanceSave() {
+  clearTimeout(apSaveTimer);
+  apSaveTimer = setTimeout(() => {
+    try {
+      localStorage.setItem('mtp.appearance', JSON.stringify(appearance));
+    } catch (e) {
+      alert('背景图过大，未能保存到本地持久化（本次会话内仍生效）');
+    }
+  }, 200);
+}
+
+/* 图片主色：48×48 采样 + 桶量化 + 饱和度加权（避免灰白黑主导），过暗自动提亮 */
+function extractDominant(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const n = 48, c = document.createElement('canvas');
+        c.width = n; c.height = n;
+        const ctx = c.getContext('2d', { willReadFrequently: true });
+        ctx.drawImage(img, 0, 0, n, n);
+        const d = ctx.getImageData(0, 0, n, n).data;
+        const buckets = new Map();
+        for (let i = 0; i < d.length; i += 4) {
+          const r = d[i], g = d[i + 1], b = d[i + 2];
+          if (d[i + 3] < 128) continue;
+          const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+          const w = (mx ? (mx - mn) / mx : 0) + 0.15;
+          const key = ((r >> 5) << 6) | ((g >> 5) << 3) | (b >> 5);
+          const t = buckets.get(key) || { r: 0, g: 0, b: 0, w: 0 };
+          t.r += r * w; t.g += g * w; t.b += b * w; t.w += w;
+          buckets.set(key, t);
+        }
+        let best = null;
+        for (const t of buckets.values()) if (!best || t.w > best.w) best = t;
+        if (!best || best.w === 0) { reject(new Error('无有效像素')); return; }
+        // 桶均值是 0-255 域，归一化后再进 HSL（rgbToHsl 期望 0-1 输入）
+        let [h, s, l] = rgbToHsl(best.r / best.w / 255, best.g / best.w / 255, best.b / best.w / 255);
+        if (l < 0.45) l = 0.6;
+        resolve(hslToRgbStr(h, s, l));
+      } catch (e) { reject(e); }
+    };
+    img.onerror = () => reject(new Error('图片加载失败'));
+    img.src = dataUrl;
+  });
+}
+function rgbToHsl(r, g, b) {
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2;
+  if (mx === mn) return [0, 0, l];
+  const d = mx - mn, s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
+  let h;
+  if (mx === r) h = (g - b) / d + (g < b ? 6 : 0);
+  else if (mx === g) h = (b - r) / d + 2;
+  else h = (r - g) / d + 4;
+  return [h / 6, s, l];
+}
+function hslToRgbStr(h, s, l) {
+  const f = n => {
+    const k = (n + h * 12) % 12;
+    const c = l - s * Math.min(l, 1 - l) * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+    return Math.round(c * 255);
+  };
+  return `rgb(${f(0)},${f(8)},${f(4)})`;
+}
+
+/* 上传背景图：压缩到最长边 1920、JPEG 85%（背景图不关心透明通道） */
+function loadBgFile(file) {
+  if (!file || !/^image\//.test(file.type)) { alert('请选择图片文件'); return; }
+  const fr = new FileReader();
+  fr.onload = () => {
+    const img = new Image();
+    img.onload = () => {
+      const MAX = 1920;
+      const k = Math.min(1, MAX / Math.max(img.naturalWidth, img.naturalHeight));
+      const c = document.createElement('canvas');
+      c.width = Math.max(1, Math.round(img.naturalWidth * k));
+      c.height = Math.max(1, Math.round(img.naturalHeight * k));
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, c.width, c.height);
+      ctx.drawImage(img, 0, 0, c.width, c.height);
+      appearance.dataUrl = c.toDataURL('image/jpeg', 0.85);
+      appearance.dominant = null;
+      applyAppearance();
+      scheduleAppearanceSave();
+    };
+    img.onerror = () => alert('图片读取失败');
+    img.src = fr.result;
+  };
+  fr.readAsDataURL(file);
+}
+
+$('btnAppearance').addEventListener('click', () => apPanel.classList.toggle('open'));
+apPanel.addEventListener('pointerdown', e => e.stopPropagation());
+document.addEventListener('pointerdown', e => {
+  if (apPanel.classList.contains('open') && !apPanel.contains(e.target)
+      && !(e.target && e.target.id === 'btnAppearance')) apPanel.classList.remove('open');
+});
+$('btnUploadBg').onclick = () => $('bgFile').click();
+$('bgFile').onchange = e => { loadBgFile(e.target.files && e.target.files[0]); e.target.value = ''; };
+$('btnRemoveBg').onclick = () => {
+  appearance.dataUrl = null; appearance.dominant = null;
+  applyAppearance(); scheduleAppearanceSave();
+};
+$('apFit').onchange  = e => { appearance.fit  = e.target.value; applyAppearance(); scheduleAppearanceSave(); };
+$('apZoom').oninput  = e => { appearance.zoom  = clampNum(e.target.value, 50, 400, 100); applyAppearance(); scheduleAppearanceSave(); };
+$('apBlur').oninput  = e => { appearance.blur  = clampNum(e.target.value, 0, 40, 0); applyAppearance(); scheduleAppearanceSave(); };
+$('apMask').oninput  = e => { appearance.mask  = clampNum(e.target.value, 0, 100, 35); applyAppearance(); scheduleAppearanceSave(); };
 
 /* ================= 编辑器事件 ================= */
 let debounce = null;
@@ -3071,11 +3308,21 @@ window.__mtp = {
   setZoom: s => { state.scale = s; applyTransform(); },
   fit: fitView,
   detect: detectMode,
+  applyBackground: dataUrl => { appearance.dataUrl = dataUrl; appearance.dominant = null; applyAppearance(); scheduleAppearanceSave(); },
   state,
 };
 
 /* ================= 启动 ================= */
 (function init() {
+  try {
+    const savedAp = JSON.parse(localStorage.getItem('mtp.appearance') || 'null');
+    if (savedAp) appearance = Object.assign({}, APPEAR_DEFAULT, savedAp);
+  } catch (_) {}
+  $('apFit').value = appearance.fit;
+  $('apZoom').value = appearance.zoom;
+  $('apBlur').value = appearance.blur;
+  $('apMask').value = appearance.mask;
+  applyAppearance();
   const savedMode = localStorage.getItem('mtp.mode');
   if (savedMode) $('modeSel').value = savedMode;
   const savedScale = localStorage.getItem('mtp.pngScale');
