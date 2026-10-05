@@ -2565,9 +2565,80 @@ const EXAMPLE = `graph LR
   style A fill:#7c3aed,color:#fff
   style F fill:#06b6d4,color:#fff`;
 
+/* ================= 语法容错 =================
+   未加英文双引号的节点标签若含特殊字符（[ ] ( ) { } < > | - 等），
+   mermaid 会解析失败或形状错乱。这里在渲染前自动补引号：
+   - 仅处理节点形状标签 [...] (...) {...}（含 [[..]] ((..)) ([..]) 等复合形状）
+     与管道边标签 |...|；已加引号的标签原样跳过；%% 注释、style/classDef
+     等语句行不碰；textarea 里的原文不修改，只修正喂给 mermaid 的副本。 */
+function tolerantMermaid(src) {
+  return src.split('\n').map(function (line) {
+    const t = line.trim();
+    if (t.startsWith('%%')) return line;                                   // 注释 / init 指令
+    if (/^(style|classDef|class|linkStyle|subgraph|end|direction|click|call)\b/.test(t)) return line;
+    const OPEN = {'[': ']', '(': ')', '{': '}'};
+    let out = '', i = 0;
+    const n = line.length;
+    while (i < n) {
+      const ch = line[i];
+      if (ch === '"') {                                                    // 引号串逐字复制
+        let j = i + 1;
+        while (j < n && line[j] !== '"') { if (line[j] === '\\') j++; j++; }
+        out += line.slice(i, Math.min(j + 1, n));
+        i = j + 1;
+        continue;
+      }
+      if (ch === '|') {                                                    // 管道边标签 |text|
+        const j = line.indexOf('|', i + 1);
+        if (j === -1) { out += ch; i++; continue; }
+        const inner = line.slice(i + 1, j);
+        const tt = inner.trim();
+        const already = tt.startsWith('"') && tt.endsWith('"');
+        const needs = /[<>()[\]{}|"-]/.test(tt);
+        out += (!already && needs) ? '|"' + inner.trim() + '"|' : line.slice(i, j + 1);
+        i = j + 1;
+        continue;
+      }
+      const closeCh = OPEN[ch];
+      if (closeCh) {                                                       // 节点形状 opener
+        const prev = out.trimEnd().slice(-1);
+        const okCtx = prev === '' || /[A-Za-z0-9_\u4e00-\u9fff\])><=.-]/.test(prev); // 行首/节点id/复合形状/箭头后
+        let depth = 0, end = -1, inQ = false;
+        for (let j = i; j < n; j++) {
+          const c = line[j];
+          if (c === '"') { inQ = !inQ; continue; }
+          if (inQ) continue;
+          if (c === ch) depth++;
+          else if (c === closeCh) { depth--; if (depth === 0) { end = j; break; } }
+        }
+        if (!okCtx || end === -1) { out += ch; i++; continue; }
+        let inner = line.slice(i + 1, end);
+        let wrap = '';                                                     // 剥掉复合形状外层 [[ (( ([ 等
+        while (true) {
+          const s = inner.trim(), fo = s[0], fc = s[s.length - 1];
+          if (OPEN[fo] === fc && s.length > 2) { wrap += fo; inner = s.slice(1, -1).trim(); } else break;
+        }
+        const tt = inner.trim();
+        const already = tt.startsWith('"') && tt.endsWith('"');
+        const needs = /[<>()[\]{}|"-]/.test(tt);
+        if (already || !needs) {
+          out += line.slice(i, end + 1);
+        } else {
+          out += ch + wrap + '"' + tt + '"' + wrap.split('').reverse().join('') + closeCh;
+        }
+        i = end + 1;
+        continue;
+      }
+      out += ch;
+      i++;
+    }
+    return out;
+  }).join('\n');
+}
+
 /* ================= 渲染 ================= */
 async function renderDiagram(raw) {
-  const code = (raw ?? codeEl.value).trim();
+  const code = tolerantMermaid((raw ?? codeEl.value).trim());
   state.error = '';
   if (!code) {
     state.lastRawSvg = null;
@@ -2593,6 +2664,7 @@ function mountSVG(svgText) {
   viewport.innerHTML = svgText;
   hint.style.display = 'none';
   errEl.style.display = 'none';
+  errEl.textContent = '';          // 清掉上次失败的残留错误文本，避免误判
   const el = viewport.querySelector('svg');
   if (!el) return;
   // 先从 viewBox 取自然尺寸，再写回显式像素宽高。
