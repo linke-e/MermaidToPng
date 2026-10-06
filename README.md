@@ -11,7 +11,7 @@ Mermaid / SVG / HTML 代码转 PNG 图片工具（便携版）
 - **本地保存** —— 代码草稿、语法模式、外观设置自动存在浏览器本地（localStorage）
 - **Agent 接口** —— 任意 MCP Agent 可直接「图表源码 → PNG 落盘」：工具全在网页里执行，本地桥纯转发零依赖（详见 `agent/README.md`）
 ## 快速使用
-打开页面后操作（任选入口）：**线上版 http://www.jjmermaid.xin**，或双击本地 `MermaidToPng.html`（或 `MermaidToPng.bat`）。然后：
+打开页面后操作（任选入口）：线上版 http://www.jjmermaid.xin，或双击本地 `MermaidToPng.html`（或 `MermaidToPng.bat`）。然后：
 1. 左侧 Code 页粘贴代码（左上角可选「自动检测 / Mermaid / SVG / HTML」，默认自动识别）：
    - Mermaid：`graph TD` / `sequenceDiagram` 等（语法参考：https://mermaid.ai/open-source/syntax/flowchart.html ）
    - SVG：`<svg>...</svg>` 片段（可带 `<?xml ...?>` 声明与注释前缀）
