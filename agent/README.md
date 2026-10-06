@@ -28,7 +28,7 @@ agent/
 
 ## MCP 注册
 
-在 Agent 的 `mcp_servers` 配置中添加（各客户端通用，键名兼容）：
+在 Agent 的 `mcp_servers` 配置中添加：
 
 ```json
 "mermaid-to-png": {
@@ -44,7 +44,7 @@ agent/
 }
 ```
 
-改完重启 Agent 生效。`--root` 可多个：`mtp_render` 的 `output_path` 只能落在这些目录内（相对路径拼第一个 root）；不传则默认 `~/Downloads`。端口可用 `--port` 或环境变量 `MTP_MCP_PORT` 覆盖（默认 47870）。
+改完重启 Agent 生效。`--root` 可多个：`mtp_render` 的 `output_path` 只能落在这些目录内（相对路径拼第一个 root）；不传则默认 `~/Downloads`。`~` 由桥自己展开（MCP 客户端直启 node 没有 shell，写作 `~/Downloads` 也按真实用户目录处理），目录不存在时落盘会自动创建。端口可用 `--port` 或环境变量 `MTP_MCP_PORT` 覆盖（默认 47870）。
 
 ## 首次使用
 

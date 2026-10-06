@@ -34,9 +34,14 @@ const PORT = Number(argValue('--port', process.env.MTP_MCP_PORT ?? '47870'));
 //（MCP stdio 未挂接的手动场景，如 `start node mtp-mcp.mjs --keep --code AB12CD`）。
 const FIXED_CODE = String(argValue('--code', process.env.MTP_MCP_CODE ?? '')).trim().toUpperCase();
 const KEEP_ALIVE = process.argv.includes('--keep');
+// `~` 由桥自己展开：MCP 客户端直启 node 时没有 shell，~/Downloads 会作为字面字符串传进来，
+// 若不处理会被 resolve 成 <cwd>/~/Downloads（服务能起，落盘位置错且随 cwd 漂移）。
+const expandTilde = (p) => String(p).startsWith('~')
+    ? String(p).replace(/^~(?=\/|\\|$)/, homedir())
+    : String(p);
 const ROOTS = (argValues('--root').length
     ? argValues('--root')
-    : [process.env.MTP_MCP_ROOT]).filter(Boolean).map(r => resolvePath(r));
+    : [process.env.MTP_MCP_ROOT]).filter(Boolean).map(r => resolvePath(expandTilde(r)));
 const DEFAULT_ROOT = resolvePath(homedir(), 'Downloads');
 const rootAt = (i) => ROOTS[i] ?? DEFAULT_ROOT;
 
@@ -258,10 +263,10 @@ const server = createServer(async (req, res) => {
             }
             if (!/\.[A-Za-z0-9]+$/.test(out)) out += '.png';
             // 相对路径拼第一个 root（§8.4）；~ 展开；绝对路径必须 resolve 后落在某个 root 内
-            const expandTilde = out.startsWith('~') ? out.replace(/^~(?=\/|\\|$)/, homedir()) : out;
-            const abs = pathWin32.isAbsolute(expandTilde)
-                ? resolvePath(expandTilde)
-                : resolvePath(rootAt(0), expandTilde);
+            const target = expandTilde(out);
+            const abs = pathWin32.isAbsolute(target)
+                ? resolvePath(target)
+                : resolvePath(rootAt(0), target);
             if (!inRoots(abs)) {
                 sendJson(res, 403, { error: 'path outside root', roots: ROOTS });
                 return;

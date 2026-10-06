@@ -200,7 +200,7 @@ POST /file   (Authorization: Bearer <token>)
 → 403 { "error": "path outside root" }
 ```
 
-- **根目录沙箱**：启动参数 `--root <dir>` 可多次；相对 path 拼第一个 root，绝对 path 必须 resolve 后落在某个 root 内（Windows 大小写不敏感前缀比对，拒绝 `..` 逃逸）
+- **根目录沙箱**：启动参数 `--root <dir>` 可多次；相对 path 拼第一个 root，绝对 path 必须 resolve 后落在某个 root 内（Windows 大小写不敏感前缀比对，拒绝 `..` 逃逸）。root 与 path 里的 `~` 都由桥自己展开（MCP 客户端直启 node 没有 shell，`~/Downloads` 是字面字符串，不展开会落进 `<cwd>/~/Downloads`）
 - 默认 root = `~/Downloads`（安全兜底）；Agent 注册时显式传更宽的 root（§8.5）
 - 需已配对 token；桥仅监听 127.0.0.1。该端点是「页面→磁盘」的**通用传输件**，不含任何 Mermaid/渲染知识——工具逻辑仍在页面
 
