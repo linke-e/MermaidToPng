@@ -14,7 +14,7 @@ Agent ──stdio MCP──▶ mtp-mcp.mjs ──HTTP长轮询(127.0.0.1:47870)�
 
 页面入口（任选其一，均连同一个本地桥）：
 
-- **直接访问 http://www.jjmermaid.xin**（推荐，始终最新版）；
+- **直接访问 http://www.jjmermaid.xin（推荐，始终最新版）；
 - 或双击本地 `MermaidToPng.html`（file:// 可用，零部署）。
 
 ## 本地文件

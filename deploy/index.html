@@ -2513,6 +2513,21 @@ globalThis.mermaid = globalThis.__esbuild_esm_mermaid.default;
     width:158px;background:rgba(255,255,255,.05);color:var(--fg);
     border:1px solid var(--panel-border);border-radius:8px;padding:5px 8px;font:inherit;font-size:13px;
   }
+  #btnAgent::after{
+    content:'';display:inline-block;width:7px;height:7px;border-radius:50%;margin-left:6px;
+    background:var(--muted,#64748b);vertical-align:middle;transition:background .2s, box-shadow .2s;
+  }
+  #btnAgent.on::after{background:#22c55e;box-shadow:0 0 6px rgba(34,197,94,.85)}
+  #mtpToast{
+    position:fixed;top:14px;left:50%;transform:translateX(-50%) translateY(-8px);z-index:100;
+    background:rgba(18,22,36,.92);border:1px solid var(--panel-border);border-radius:10px;
+    backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    padding:8px 16px;font-size:13px;color:var(--fg);
+    opacity:0;pointer-events:none;transition:opacity .25s, transform .25s;white-space:nowrap;
+  }
+  #mtpToast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  #mtpToast.ok{border-color:rgba(34,197,94,.5)}
+  #mtpToast.err{border-color:rgba(239,68,68,.5)}
   #agentStatus{font-size:13px}
   #agentStatus.ok{color:var(--vivid,#7c3aed)}
   #agentHint{font-size:12px;color:var(--muted);line-height:1.6}
@@ -2547,6 +2562,7 @@ globalThis.mermaid = globalThis.__esbuild_esm_mermaid.default;
 
 <div id="bgLayer" aria-hidden="true"><img id="bgImg" alt=""></div>
 <div id="bgMask" aria-hidden="true"></div>
+<div id="mtpToast" aria-live="polite"></div>
 
 <div id="agentPanel">
   <div class="ap-row"><span>状态</span><span id="agentStatus" class="bad">未连接</span></div>
@@ -3507,11 +3523,23 @@ window.__mtpAgentBridge = (function () {
   let polling = false;
   let stop = false;
 
-  function setStatus(text, ok) {
-    const el = $('agentStatus');
+  let toastTimer = 0;
+  function toast(text, kind) {           // kind: 'ok' | 'err' | undefined
+    const el = $('mtpToast');
     if (!el) return;
     el.textContent = text;
-    el.className = ok === true ? 'ok' : 'bad';
+    el.className = 'show' + (kind ? ' ' + kind : '');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { el.className = ''; }, 2600);
+  }
+
+  function setStatus(text, ok) {
+    const el = $('agentStatus');
+    if (el) {
+      el.textContent = text;
+      el.className = ok === true ? 'ok' : 'bad';
+    }
+    $('btnAgent')?.classList.toggle('on', ok === true);   // 按钮状态点：绿=已连接
   }
 
   const api = (p, opts = {}) => fetch(`http://127.0.0.1:${port}${p}`, {
@@ -3597,7 +3625,7 @@ window.__mtpAgentBridge = (function () {
         const r = await api('/poll');
         backoff = 2000;
         if (r.status === 204) continue;                       // 长轮询到期无请求，立即再挂
-        if (r.status === 401) { token = ''; setStatus('令牌失效，请重新配对', false); break; }
+        if (r.status === 401) { token = ''; setStatus('令牌失效，请重新配对', false); toast('连接已失效，请重新配对', 'err'); break; }
         if (!r.ok) { setStatus(`桥连接异常（HTTP ${r.status}），${backoff / 1000}s 后重连`, false); await sleep(backoff); backoff = Math.min(backoff * 2, 10000); continue; }
         const req = await r.json();
         if (req.method === 'tools/call') {
@@ -3626,14 +3654,17 @@ window.__mtpAgentBridge = (function () {
     token = (await r.json()).token;
     await hello();
     setStatus(`已连接（端口 ${port}）`, true);
+    toast('连接成功', 'ok');
     pollLoop();
   }
 
   function disconnect() {
+    const wasOn = Boolean(token);
     stop = true;
     if (token) api('/bye', { method: 'POST', keepalive: true }).catch(() => {});
     token = '';
     setStatus('未连接', false);
+    if (wasOn) toast('已断开连接');
   }
 
   window.addEventListener('beforeunload', () => {             // 尽力通知桥立即换新配对码（§8.3）
@@ -3641,7 +3672,7 @@ window.__mtpAgentBridge = (function () {
       fetch(`http://127.0.0.1:${port}/bye`, { method: 'POST', keepalive: true, headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
   });
 
-  return { connect, disconnect, isPaired: () => Boolean(token), TOOLS, setStatus };
+  return { connect, disconnect, isPaired: () => Boolean(token), TOOLS, setStatus, toast };
 })();
 
 (function agentPanelInit() {
@@ -3661,7 +3692,11 @@ window.__mtpAgentBridge = (function () {
       await __mtpAgentBridge.connect($('agentPort').value, $('agentCode').value.trim());
       $('agentCode').value = '';
       panel.classList.remove('open');
-    } catch (e) { __mtpAgentBridge.setStatus('配对失败：' + ((e && e.message) || e), false); }
+    } catch (e) {
+      const msg = '配对失败：' + ((e && e.message) || e);
+      __mtpAgentBridge.setStatus(msg, false);
+      __mtpAgentBridge.toast(msg, 'err');
+    }
     btn.disabled = false;
   };
   $('btnAgentDisconnect').onclick = () => __mtpAgentBridge.disconnect();
