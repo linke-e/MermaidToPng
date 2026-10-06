@@ -2508,6 +2508,7 @@ globalThis.mermaid = globalThis.__esbuild_esm_mermaid.default;
     border:1px solid var(--panel-border);border-radius:8px;padding:5px 8px;font:inherit;font-size:13px;
   }
   .ap-row input[type=number]::-webkit-inner-spin-button{opacity:1}
+  .ap-row input[type=checkbox]{accent-color:var(--accent-a);width:15px;height:15px;cursor:pointer}
 
   /* 分割条 */
   #split{cursor:col-resize;background:transparent;transition:background .15s}
@@ -2525,7 +2526,7 @@ globalThis.mermaid = globalThis.__esbuild_esm_mermaid.default;
 <header>
   <div class="logo">MermaidToPng</div>
   <div class="spacer"></div>
-  <button id="btnAppearance" title="外观设置 v5（若颜色行为异常，请 Ctrl+F5 强制刷新加载新版）">外观</button>
+  <button id="btnAppearance" title="外观设置 v6（若颜色行为异常，请 Ctrl+F5 强制刷新加载新版）">外观</button>
 </header>
 
 <div id="bgLayer" aria-hidden="true"><img id="bgImg" alt=""></div>
@@ -2551,6 +2552,10 @@ globalThis.mermaid = globalThis.__esbuild_esm_mermaid.default;
   <div class="ap-row"><span>缩放 (%)</span><input type="number" id="apZoom" min="50" max="400" step="5" value="100"></div>
   <div class="ap-row"><span>模糊程度 (px)</span><input type="number" id="apBlur" min="0" max="40" step="1" value="0"></div>
   <div class="ap-row"><span>遮罩强度 (%)</span><input type="number" id="apMask" min="0" max="100" step="5" value="35"></div>
+  <label class="ap-row" for="apFlip" style="cursor:pointer">
+    <span>水平翻转</span>
+    <input type="checkbox" id="apFlip">
+  </label>
   <input type="file" id="bgFile" accept="image/*" style="display:none">
 </div>
 
@@ -3101,7 +3106,7 @@ function syncStageBg() {
 const bgLayer = $('bgLayer'), bgImg = $('bgImg'), bgMask = $('bgMask'),
       apPanel = $('appearancePanel');
 
-const APPEAR_DEFAULT = { fit: 'cover', zoom: 100, blur: 0, mask: 35, dataUrl: null, vivid: null, aux: null };
+const APPEAR_DEFAULT = { fit: 'cover', zoom: 100, blur: 0, mask: 35, flip: false, dataUrl: null, vivid: null, aux: null };
 let appearance = Object.assign({}, APPEAR_DEFAULT);
 let apSaveTimer = null;
 
@@ -3121,7 +3126,8 @@ function applyAppearance() {
   }
   if (bgImg.getAttribute('src') !== appearance.dataUrl) bgImg.src = appearance.dataUrl;
   bgImg.style.objectFit = appearance.fit;
-  bgImg.style.transform = 'scale(' + (appearance.zoom / 100) + ')';
+  // 水平翻转与缩放合并：scaleX(-1) 在前，scale 保持 X/Y 同比缩放
+  bgImg.style.transform = (appearance.flip ? 'scaleX(-1) ' : '') + 'scale(' + (appearance.zoom / 100) + ')';
   bgLayer.style.filter = appearance.blur > 0 ? 'blur(' + appearance.blur + 'px)' : 'none';
   bgMask.style.opacity = String(appearance.mask / 100);
   if (appearance.vivid && appearance.aux) {
@@ -3288,6 +3294,7 @@ $('apFit').onchange  = e => { appearance.fit  = e.target.value; applyAppearance(
 $('apZoom').oninput  = e => { appearance.zoom  = clampNum(e.target.value, 50, 400, 100); applyAppearance(); scheduleAppearanceSave(); };
 $('apBlur').oninput  = e => { appearance.blur  = clampNum(e.target.value, 0, 40, 0); applyAppearance(); scheduleAppearanceSave(); };
 $('apMask').oninput  = e => { appearance.mask  = clampNum(e.target.value, 0, 100, 35); applyAppearance(); scheduleAppearanceSave(); };
+$('apFlip').onchange = e => { appearance.flip = !!e.target.checked; applyAppearance(); scheduleAppearanceSave(); };
 
 /* ================= 编辑器事件 ================= */
 let debounce = null;
@@ -3368,7 +3375,7 @@ window.__mtp = {
 };
 
 /* ================= 启动 ================= */
-console.info('[MermaidToPng] 外观系统 v5：标题=图片突出色 · 其他文字=图片辅助色 · 主按钮=玻璃；若行为异常请 Ctrl+F5 强刷');
+console.info('[MermaidToPng] 外观系统 v6：标题=图片突出色 · 其他文字=图片辅助色 · 背景支持水平翻转 · 主按钮=玻璃；若行为异常请 Ctrl+F5 强刷');
 (function init() {
   try {
     const savedAp = JSON.parse(localStorage.getItem('mtp.appearance') || 'null');
@@ -3378,6 +3385,7 @@ console.info('[MermaidToPng] 外观系统 v5：标题=图片突出色 · 其他�
   $('apZoom').value = appearance.zoom;
   $('apBlur').value = appearance.blur;
   $('apMask').value = appearance.mask;
+  $('apFlip').checked = !!appearance.flip;
   applyAppearance();
   const savedMode = localStorage.getItem('mtp.mode');
   if (savedMode) $('modeSel').value = savedMode;

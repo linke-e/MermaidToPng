@@ -1,8 +1,8 @@
 # MermaidToPng 项目架构
 
-> 单文件本地 Mermaid / SVG / HTML → PNG 工具。粘贴代码 → 实时预览（缩放/拖拽）→ 导出高清 PNG。
+> 单文件本地 Mermaid / SVG / HTML → PNG 工具。粘贴代码 → 实时预览→ 导出高清 PNG。
 > 状态：**已实现并实测通过**（见文末验证清单，2026-10-05 新增 SVG/HTML 语法支持）。
-> 入口：`MermaidToPng.html`，双击即用；`deploy/index.html` 为同步部署副本。
+> 入口：`MermaidToPng.html`，双击即用。
 
 ## 1. 需求 → 设计映射
 
@@ -92,7 +92,7 @@ MermaidToPng/
 - 单文件即全部：拷 `MermaidToPng.html` 一个文件到任何电脑双击即用。
 - 修改主文件后需同步 `deploy/index.html`（逐字节拷贝）。
 
-## 6. 已验证清单（agent-browser + Chrome for Testing 152 真机，20/20 通过）
+## 6. 已验证清单
 
 | 项 | 结果 |
 |---|---|
