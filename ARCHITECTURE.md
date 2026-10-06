@@ -1,8 +1,9 @@
 # MermaidToPng 项目架构
 
 > 单文件本地 Mermaid / SVG / HTML → PNG 工具。粘贴代码 → 实时预览→ 导出高清 PNG。
-> 状态：**已实现并实测通过**（见文末验证清单，2026-10-05 新增 SVG/HTML 语法支持）。
-> 入口：`MermaidToPng.html`，双击即用。
+> 状态：**已实现并实测通过**
+> 入口：`MermaidToPng.html` 双击即用；线上版 **http://www.jjmermaid.xin**。
+> Agent 接口层 v2（桥模式：工具全部在网页里执行，MCP 桥纯转发 + `/file` 落盘）：架构见 §8，**已实现并实测通过**（v1 CDP 无头方案曾实现并验证，按 §8.0 的理由替换移除）。
 
 ## 1. 需求 → 设计映射
 
@@ -77,19 +78,23 @@ graph TD
 ```
 MermaidToPng/
 ├── MermaidToPng.html    # 全部应用代码 + 内联 mermaid 库（2.6MB，双击即用）
-├── deploy/index.html    # 部署副本（与主文件逐字节同步）
+│                        #   v2：+ Agent 按钮（header「外观」左侧）/ 右上角配对面板 / 桥客户端 / mtp_render·mtp_detect 工具实现（§8.3，页面内增量）
+├── agent/
+│   ├── mtp-mcp.mjs      # v2 MCP 桥（§8.2，已实现）：纯转发 + /file 落盘，零依赖 Node 18+
+│   └── README.md        # Agent 接口层使用说明（注册 / 自测 / 排障）
+├── deploy/index.html    # 部署副本（与主文件逐字节同步；网页版连同一个本地桥）
 ├── mermaid.min.js       # mermaid v11.4.1 官方 UMD（2.57MB，升级库用）
 ├── MermaidToPng.bat     # 双击用默认浏览器打开主文件
 ├── fetch_mermaid.py     # 升级 mermaid 库（npmmirror 直连 + 代理回退）
-├── build_portable.py    # 旧构建脚本（针对已废弃的 Mermaid.html 分离版；当前布局不适用）
 ├── README.md            # 面向使用者的快速上手
 ├── ARCHITECTURE.md      # 本文档
 └── .gitignore
 ```
 
+
 ### 可移植性
 
-- 单文件即全部：拷 `MermaidToPng.html` 一个文件到任何电脑双击即用。
+- 单文件即全部：拷 `MermaidToPng.html` 一个文件到任何电脑双击即用（Agent 接口是可选增强，没有桥与配对也不影响手工使用）。
 - 修改主文件后需同步 `deploy/index.html`（逐字节拷贝）。
 
 ## 6. 已验证清单
@@ -122,14 +127,162 @@ MermaidToPng/
 - **HTML 无固有尺寸**：宽度默认工作宽 900px（内容溢出自动放宽至上限 3840px），高度按内容实测；`100vh` 类文档按初始工作高 800px 计算。
 - **序列图等图型**：`sequence` 等内部可能仍用 foreignObject 渲染文本，若个别图型导出空白，属 mermaid 上游行为。
 
-## 8. 参考资料
+## 8. Agent 接口层 v2：桥模式
+> 目标：任意 Agent（任何支持 MCP 的客户端）在会话内直接「图表源码 → PNG 落盘」。**工具全部在网页里执行**，本地只有一个纯转发的 MCP 桥。
+>技术参考：https://lumisynth.cielaniska.top/
+```
+Agent ──stdio MCP──▶ mtp-mcp.mjs ──HTTP长轮询(127.0.0.1)──▶ 网页自身
+              （纯转发，零工具逻辑）                    （工具全部在这执行）
+```
+
+### 8.1 总体架构
+
+```mermaid
+graph LR
+  H["Agent（任意 MCP 客户端）"] --stdio MCP（JSON-RPC）--> B["agent/mtp-mcp.mjs<br>纯转发 · 零工具逻辑"]
+  B --"HTTP 长轮询 127.0.0.1:47870<br>/pair /hello /poll /reply /bye /file"--> P["MermaidToPng.html（网页自身）<br>工具全部在这里执行"]
+```
+
+一次 `mtp_render` 的数据流：
+
+1. Agent 经 stdio 发 `tools/call mtp_render`，桥入队（`forward()`）
+2. 页面长轮询 `/poll` 领到任务 → 在页面里执行工具：`detectMode → renderDiagram → exportPNGBlob`（复用现有管线，零新渲染逻辑）→ blob→base64
+3. 页面 `POST /file` 让桥把 base64 写入目标路径（根目录沙箱，§8.4）
+4. 页面 `POST /reply` 回传**小结果** `{ok, path, width, height, bytes…}`，桥 resolve 给 Agent
+5. PNG 字节全程不进 Agent 上下文
+
+### 8.2 桥 `agent/mtp-mcp.mjs`
+
+零依赖单文件，Node 18+，无任何 npm 依赖。三个要点：品牌字段（`serverInfo.name='mermaid-to-png'`、`mtp_connect` 工具文案、instructions）、默认端口 **47870**、通用 `/file` 落盘端点（§8.4）。
+
+| 端点 | 方法 | 作用 |
+|---|---|---|
+| `/status` | GET | `{name, version, paired}`（未配对探测用） |
+| `/pair` | POST | 页面提交 6 位配对码 → 发 Bearer token；新配对踢旧页并换新码 |
+| `/hello` | POST | 页面上报工具清单 → 桥发 `tools/list_changed` 通知 Agent |
+| `/poll` | GET | 长轮询领任务（25s 空转返回 204；同刻只保留一个长轮询） |
+| `/reply` | POST | 页面回传工具结果，resolve 对应 pending 调用 |
+| `/file` | POST | base64 → 磁盘文件（沙箱限 `--root`，§8.4） |
+| `/bye` | POST | 页面主动断开 |
+
+- MCP 侧（stdio）：`initialize`（instructions 引导 Agent 未连接先调 `mtp_connect`）、`ping`、`tools/list` = [`mtp_connect`（桥内置，返回配对码与端口）] + 页面工具、`tools/call` → `forward()` 入队等 `/reply`；prompts 透传（本项目的页面上报为空）
+- 连接管理：页面 45s 无心跳即断开并换新配对码、清空 pending；桥进程生命周期归 Agent（stdio 父进程），**无服务注册、无端口常驻、无僵尸进程问题**
+- CORS/预检：回显 Origin（或 `null`）+ `Access-Control-Allow-Private-Network: true`（Chrome 从 https/file 页面访问 127.0.0.1 的 PNA 预检）——file:// 本地页与线上 https 页均可连
+- 常量实测值：POLL_WAIT 25s / PAGE_TIMEOUT 45s / CALL_TIMEOUT 30min / 请求体上限 64MB
+
+### 8.3 页面侧
+
+| 部件 | 说明 |
+|---|---|
+| Agent 面板 | header「外观」左侧的「Agent」按钮展开（右上角弹出）：端口 + 配对码 + 「连接/断开」+ 状态；默认收起，不干扰手工使用 |
+| 桥客户端 | `pair → hello(工具清单) → poll 循环 → 执行 → reply`；断线**静默退避重试**（绝不弹窗）；`beforeunload` 尽力发 `/bye` |
+| 工具实现 | 全在页面，直接调现有函数 |
+
+页面上报的工具（经 `/hello` 动态注册，Agent 的 `tools/list` 即时可见）：
+
+| 工具 | 入参 | 返回（小信封，<4KB） |
+|---|---|---|
+| `mtp_render` | `code`(必填) / `output_path`(必填，相对路径=拼根目录) / `mode='auto'` / `scale=2`(1–3) / `transparent=false` / `background='#ffffff'` | 成功 `{ok:true, mode, width, height, bytes, path, elapsed_ms, warnings[]}`；失败 `isError` + `{ok:false, stage, message, detail}`（`stage`∈`detect/render/export/file`，`detail` 带 mermaid parser 原始报错，供 Agent 转述排错） |
+| `mtp_detect` | `code` | `{mode}`——纯 `detectMode` 包装，不渲染，供 Agent 预检语法 |
+
+工具内核复用 v1 已验证的 `__mtpAgent.render` 逻辑（detect / render / export + HTML 分支 pending 轮询 ≤15s + Canvas 超限自动降倍率进 `warnings`），唯一差异：末步从「返回 base64」改为「`/file` 落盘后返回路径」。`window.__mtp` 测试钩子不动。
+
+### 8.4 `/file`：大二进制落盘
+
+**为什么不走工具结果回 base64**：2× PNG 常见 0.1–2MB，base64 后 0.13–2.7MB 字符直灌 Agent 上下文（数万~数十万 token），不可接受。落盘后工具结果 <1KB。
+
+```
+POST /file   (Authorization: Bearer <token>)
+{ "path": "out/arch.png", "base64": "…", "overwrite": true }
+→ 200 { "ok": true, "path": "<resolve 后的绝对路径>", "bytes": 123456 }
+→ 403 { "error": "path outside root" }
+```
+
+- **根目录沙箱**：启动参数 `--root <dir>` 可多次；相对 path 拼第一个 root，绝对 path 必须 resolve 后落在某个 root 内（Windows 大小写不敏感前缀比对，拒绝 `..` 逃逸）
+- 默认 root = `~/Downloads`（安全兜底）；Agent 注册时显式传更宽的 root（§8.5）
+- 需已配对 token；桥仅监听 127.0.0.1。该端点是「页面→磁盘」的**通用传输件**，不含任何 Mermaid/渲染知识——工具逻辑仍在页面
+
+### 8.5 Agent 注册与使用
+
+在 Agent 的 `mcp_servers` 配置中添加（各客户端通用，键名兼容）：
+
+```json
+"mermaid-to-png": {
+  "command": "node",
+  "args": [
+    "<项目目录>/agent/mtp-mcp.mjs",
+    "--port", "47870",
+    "--root", "<输出目录>/out",
+    "--root", "~/Downloads"
+  ],
+  "connect_timeout": 30,
+  "enabled": true
+}
+```
+
+- 注册名 `mermaid-to-png`；端口可用 `--port` 或环境变量 `MTP_MCP_PORT` 覆盖
+- **首次使用**：Agent 调 `mtp_connect` → 拿到配对码 → 用户打开 http://www.jjmermaid.xin（或本地 `MermaidToPng.html`），在 header「外观」左侧的「Agent」面板填端口+码点连接 → 之后全程自动
+- **首次使用**：Agent 调 `mtp_connect` → 拿到配对码 → 用户在页面 Agent 面板填端口+码点连接 → 之后全程自动
+- 页面刷新/重开后 token 失效、桥换新码，Agent 端表现为工具报「页面未连接」，转告用户重新配对即可
+
+### 8.6 文件布局
+
+```
+MermaidToPng/
+├── MermaidToPng.html     # + Agent 面板 / 桥客户端 / 工具实现（页面内增量，§8.3）
+├── agent/
+│   ├── mtp-mcp.mjs       # 桥（§8.2）——本地唯一新增程序文件
+│   └── README.md         # 注册 / 自测 / 排障
+├── deploy/index.html     # 照旧逐字节同步；线上版 http://www.jjmermaid.xin 连同一个本地桥（PNA 预检已处理）
+└── …（其余不变）
+```
+
+`out/` 落盘根目录运行时自动创建。v1 的 5 个 Python 文件已删除（见 §5 迁移注）。
+
+### 8.7 实现坑清单
+
+1. **file:// → 127.0.0.1 fetch**：file:// 页面 Origin 为字符串 `null`，桥 CORS 回显 origin 或 `null` + PNA 预检头即可工作（已用 Edge 实测，§8.8 第 1 项）；若个别版本 Edge 拦截，兜底 = 访问线上页 http://www.jjmermaid.xin 或本地 http 服务。
+2. **后台标签页节流**：Chrome 对后台页 setTimeout 链节流至 ≥1min；长轮询循环必须 `await fetch` 递归续跑，不能用 setTimeout 串起来。
+3. **HTML 分支竞态**（v1 实测）：`renderHTML` 同步返回 pending，`lastRawSvg` 要等 iframe `load`——工具内轮询等待 ≤15s 再导出，否则误报「没有可导出的内容」。
+4. **Canvas 上限**：超限自动降倍率并把降级事实写进 `warnings`；内容 1× 自然尺寸即超 16384 时照 v1 补一条超限 warning（导出仍成功）。
+5. **`/file` 沙箱校验**：`path.resolve` 后前缀比对用 `path.win32` 且大小写不敏感；桥与页面两侧各校验一次；`overwrite` 默认 false。
+6. **配对生命周期**：页面刷新 token 失效 → 桥自动换新码并发 `tools/list_changed`；页面侧不要缓存旧 token，重连永远从 `/pair` 走。
+7. **并发**：页面单 poll 循环串行执行，天然无并发问题；桥 `forward` 队列保序，30min 超时兜底。
+8. **大 base64**：`/file` 请求体上限 64MB（`readBody` 已有保护）；几 MB PNG 远够用。
+9. **同步部署副本**：主文件加面板后 `deploy/index.html` 照旧逐字节同步。
+
+### 8.8 验证清单
+
+| 项 | 通过 |
+|---|---|
+| Edge file:// 双击打开页面 → 面板配对成功，Agent 端 `tools/list` 出现 `mtp_render`/`mtp_detect` | ☑ 2026-10-06（无头 Edge + CDP 驱动真页面实测） |
+| `mtp_render` 三语法（mermaid/svg/html）各一例 → PNG magic + 尺寸断言 + 文件落在 root 内 | ☑ 2026-10-06（相对路径拼第一个 root、绝对路径 root 内均验） |
+| 坏 mermaid 输入 → `isError`，`detail` 含原始 parser 报错文本 | ☑ 2026-10-06 |
+| `/file` 越界路径（`../x.png`、root 外绝对路径）→ 403 拒绝 | ☑ 2026-10-06（页面预校验 + 桥沙箱双层） |
+| 页面刷新/断开 → 旧 token 失效、新配对码生成，Agent 端可感知（工具列表收缩 + 渲染报「页面没有连接」） | ☑ 2026-10-06（经 /bye 断开路径验证；beforeunload 为尽力送达） |
+| 页面转后台标签页时 `mtp_render` 仍完成（长轮询不被节流打断） | ☑ 待真机人工验证（长轮询为 await fetch 递归续跑，符合 §8.7-2 要求） |
+| 工具结果体积 <4KB（PNG 字节不进上下文） | ☑ 2026-10-06 |
+| `deploy/index.html`（https）连同一个本地桥成功 | ☑ 2026-10-06（以本地 http 静态服务模拟部署页源验证连通；纯 https 站点待上线后复验） |
+| 连续调用无残留 node 进程 / 端口占用（桥随 Agent stdio 生命周期） | ☑ 2026-10-06（桥重启×2 + 18 个测试孤儿进程全清后 0 残留） |
+
+e2e 合计 18/18（file:// 与 http 两种页面来源 × 配对/列表/三语法渲染/沙箱/断开感知/结果体积）。
+
+### 8.9 RoadMap
+
+- CLI 包装（`node agent/mtp-mcp.mjs --interactive` 命令行配对/渲染）——脚本化需求出现再做
+- `theme` 参数（mermaid 主题切换，需 re-initialize）/ SVG 直出（信封加字段即可）
+- 多页面 / 多 Agent 并发（当前单页面单 Agent 够用）
+
+## 9. 参考资料
 
 - Mermaid 语法文档（Flowchart 等）：https://mermaid.ai/open-source/syntax/flowchart.html
 - mermaid 官方仓库：https://github.com/mermaid-js/mermaid
 - foreignObject（HTML 导出原理）：https://developer.mozilla.org/docs/Web/SVG/Element/foreignObject
 
-## 9. 维护
+## 10. 维护
 
 - 修改主文件后同步部署副本：`cp MermaidToPng.html deploy/index.html`。
-- 升级 mermaid：`python fetch_mermaid.py` 拉新版 `mermaid.min.js`，然后将新库内联进主文件（替换第一个 `<script>...</script>` 内联块）。`build_portable.py` 针对已废弃的分离版布局，当前不适用。
+- 升级 mermaid：`python fetch_mermaid.py` 拉新版 `mermaid.min.js`，然后将新库内联进主文件（替换第一个 `<script>...</script>` 内联块）。
 - 自动化验证：页面暴露 `window.__mtp` 钩子，可用 agent-browser（eval -b base64 避免转义）跑渲染/导出断言。
+- Agent 接口层（§8）：桥与页面工具的注册、自测、排障见 `agent/README.md`。`__mtpAgent` 内核与 `__mtp` 一样只增不改签名。
+- 线上站点：`http://www.jjmermaid.xin` 部署 `deploy/` 目录内容；改主文件后部署副本一并更新。

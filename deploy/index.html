@@ -2502,6 +2502,21 @@ globalThis.mermaid = globalThis.__esbuild_esm_mermaid.default;
     box-shadow:0 12px 40px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.12);
   }
   #appearancePanel.open{display:flex}
+  #agentPanel{
+    position:fixed;top:56px;right:12px;z-index:60;width:286px;
+    background:rgba(18,22,36,.92);border:1px solid var(--panel-border);border-radius:14px;
+    backdrop-filter:blur(20px) saturate(1.4);-webkit-backdrop-filter:blur(20px) saturate(1.4);
+    padding:12px;display:none;flex-direction:column;gap:8px;
+  }
+  #agentPanel.open{display:flex}
+  .ap-row input[type=text]{
+    width:158px;background:rgba(255,255,255,.05);color:var(--fg);
+    border:1px solid var(--panel-border);border-radius:8px;padding:5px 8px;font:inherit;font-size:13px;
+  }
+  #agentStatus{font-size:13px}
+  #agentStatus.ok{color:var(--vivid,#7c3aed)}
+  #agentHint{font-size:12px;color:var(--muted);line-height:1.6}
+
   .ap-row{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:13px;color:var(--muted)}
   .ap-row select,.ap-row input[type=number]{
     width:158px;background:rgba(255,255,255,.05);color:var(--fg);
@@ -2526,11 +2541,24 @@ globalThis.mermaid = globalThis.__esbuild_esm_mermaid.default;
 <header>
   <div class="logo">MermaidToPng</div>
   <div class="spacer"></div>
+  <button id="btnAgent" title="Agent 桥：MCP 工具经本地 mtp-mcp 长轮询进本页执行">Agent</button>
   <button id="btnAppearance" title="外观设置 v6（若颜色行为异常，请 Ctrl+F5 强制刷新加载新版）">外观</button>
 </header>
 
 <div id="bgLayer" aria-hidden="true"><img id="bgImg" alt=""></div>
 <div id="bgMask" aria-hidden="true"></div>
+
+<div id="agentPanel">
+  <div class="ap-row"><span>状态</span><span id="agentStatus" class="bad">未连接</span></div>
+  <div class="ap-row"><span>桥端口</span><input type="number" id="agentPort" min="1024" max="65535" value="47870"></div>
+  <div class="ap-row"><span>配对码</span><input type="text" id="agentCode" maxlength="6" placeholder="6 位配对码"></div>
+  <div style="display:flex;gap:6px;justify-content:flex-end">
+    <button id="btnAgentConnect">连接</button>
+    <button id="btnAgentDisconnect">断开</button>
+  </div>
+  <div id="agentHint">Agent 会调 mtp_connect 告诉你端口和 6 位配对码；桥由 Agent 侧启动（node mtp-mcp.mjs，默认端口 47870）。
+  每次断开/刷新都会换新配对码，重连前先让 Agent 重新取一次。</div>
+</div>
 
 <div id="appearancePanel">
   <div class="ap-row">
@@ -3373,6 +3401,271 @@ window.__mtp = {
   applyBackground: dataUrl => { appearance.dataUrl = dataUrl; appearance.vivid = null; appearance.aux = null; applyAppearance(); scheduleAppearanceSave(); },
   state,
 };
+
+/* ================= Agent 接口钩子（无头渲染用，ARCHITECTURE §8.2） =================
+   __mtpAgent.render({code, mode, scale, transparent, background})
+   → { ok:true,  mode, width, height, bytes, pngBase64, warnings:[] }
+   → { ok:false, stage, message, detail }
+   统一信封：成功/失败都 resolve，不 throw 跨界；失败不覆盖旧图（renderDiagram 原语义）。 */
+window.__mtpAgent = {
+  version: '1',
+  async render(req) {
+    const warnings = [];
+    const q = req || {};
+    let stage = 'detect';
+    try {
+      const code = String(q.code ?? '');
+      if (!code.trim()) return { ok: false, stage: 'render', message: '代码为空', detail: '' };
+      const want = String(q.mode || 'auto').toLowerCase();
+      if (!['auto', 'mermaid', 'svg', 'html'].includes(want))
+        return { ok: false, stage: 'detect', message: '未知 mode: ' + want, detail: '' };
+      const prevSel = $('modeSel').value;
+      stage = 'render';
+      $('modeSel').value = (want === 'auto') ? detectMode(code) : want;
+      let r;
+      try { r = await renderDiagram(code); }
+      finally { $('modeSel').value = prevSel; }
+      if (!r || r.ok !== true)
+        return { ok: false, stage: 'render',
+                 message: (r && r.error) || '渲染失败', detail: (r && r.error) || '' };
+      if (r.pending) {  // HTML 分支：lastRawSvg 在 iframe load 异步事件里就位，等它（≤15s）
+        const dl = Date.now() + 15000;
+        while (Date.now() < dl && !state.lastRawSvg && !state.error)
+          await new Promise(z => setTimeout(z, 50));
+        if (!state.lastRawSvg)
+          return { ok: false, stage: 'render',
+                   message: state.error || 'HTML 渲染超时（iframe load 未完成）', detail: '' };
+      }
+      stage = 'export';
+      const scale = Math.max(1, Math.min(3, Math.round(Number(q.scale) || 2)));
+      const transparent = !!q.transparent;
+      const bg = String(q.background || '#ffffff');
+      const wantW = Math.max(1, Math.round(state.vbW * scale));
+      const wantH = Math.max(1, Math.round(state.vbH * scale));
+      const blob = await exportPNGBlob(scale, transparent, bg);
+      stage = 'base64';
+      const buf = new Uint8Array(await blob.arrayBuffer());
+      const magic = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+      for (let i = 0; i < 8; i++) if (buf[i] !== magic[i]) throw new Error('导出结果不是 PNG');
+      const dv = new DataView(buf.buffer);
+      const w = dv.getUint32(16), h = dv.getUint32(20);
+      if (state.vbW > 16384 || state.vbH > 16384)
+        warnings.push('内容自然尺寸 ' + Math.round(state.vbW) + '×' + Math.round(state.vbH) + ' 超过 Canvas 单边 16384 上限，1× 也无法缩小，导出可能被查看器截断');
+      if (w !== wantW || h !== wantH)
+        warnings.push('Canvas 上限保护：倍率已从 ' + scale + ' 自动降级（请求 ' + wantW + '×' + wantH + '，实际 ' + w + '×' + h + '）');
+      let bin = '';
+      const CH = 0x8000;
+      for (let i = 0; i < buf.length; i += CH) bin += String.fromCharCode.apply(null, buf.subarray(i, i + CH));
+      return { ok: true, mode: state.mode, width: w, height: h, bytes: buf.length, pngBase64: btoa(bin), warnings };
+    } catch (e) {
+      return { ok: false, stage, message: (e && e.message) || String(e), detail: '' };
+    }
+  }
+};
+
+/* ================= Agent 桥（v2：长轮询连本地 mtp-mcp 桥，工具逻辑全在页内） =================
+   协议：POST /pair{code}→token；POST /hello{tools}；GET /poll（长轮询 25s，204=无请求）；
+   POST /file{path,base64,overwrite}（桥按 --root 沙箱落盘）；POST /reply{id,result}；POST /bye。
+   令牌只在内存（刷新即失效、桥换新配对码）；断线静默退避重试，绝不弹窗。 */
+window.__mtpAgentBridge = (function () {
+  const DEFAULT_PORT = 47870;
+  const sleep = ms => new Promise(z => setTimeout(z, ms));
+  const TOOLS = [
+    {
+      name: 'mtp_render',
+      title: '渲染图表为 PNG',
+      description: '把 Mermaid / SVG / HTML 源码渲染成 PNG 并写入指定路径。适合架构图、流程图、时序图、任何图表落盘。',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          code: { type: 'string', description: '图表源码：Mermaid（graph TD...）、SVG（<svg>...）或 HTML 片段/完整文档，任一' },
+          output_path: { type: 'string', description: 'PNG 输出路径（必填）。相对路径拼桥的落盘根目录（--root）；必须落在根目录内' },
+          mode: { type: 'string', enum: ['auto', 'mermaid', 'svg', 'html'], description: '语法模式，默认 auto 自动检测' },
+          scale: { type: 'integer', minimum: 1, maximum: 3, description: '倍率，默认 2；超 Canvas 上限自动降级并记入 warnings' },
+          transparent: { type: 'boolean', description: '透明底，默认 false；true 时优先于 background' },
+          background: { type: 'string', description: '导出底色，默认 #ffffff' },
+        },
+        required: ['code', 'output_path'],
+      },
+      annotations: { readOnlyHint: false, idempotentHint: true, destructiveHint: false },
+    },
+    {
+      name: 'mtp_detect',
+      title: '图表语法检测',
+      description: '检测源码属于哪种语法（mermaid/svg/html），不渲染。用于渲染前预检语法分派。',
+      inputSchema: {
+        type: 'object',
+        properties: { code: { type: 'string', description: '待检测的源码' } },
+        required: ['code'],
+      },
+      annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+    },
+  ];
+
+  let port = Number(localStorage.getItem('mtp.agent.port')) || DEFAULT_PORT;
+  let token = '';              // 只在内存：刷新/重开即失效，重连永远从 /pair 走（§8.7-6）
+  let polling = false;
+  let stop = false;
+
+  function setStatus(text, ok) {
+    const el = $('agentStatus');
+    if (!el) return;
+    el.textContent = text;
+    el.className = ok === true ? 'ok' : 'bad';
+  }
+
+  const api = (p, opts = {}) => fetch(`http://127.0.0.1:${port}${p}`, {
+    ...opts,
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(opts.headers || {}) },
+  });
+
+  async function hello() {
+    const r = await api('/hello', { method: 'POST', body: JSON.stringify({ tools: TOOLS, prompts: [] }) });
+    if (r.status === 401) { token = ''; throw new Error('令牌失效，请重新配对'); }
+    if (!r.ok) throw new Error('hello 失败：HTTP ' + r.status);
+  }
+
+  // 桥 /file 页面侧预校验：拒绝 .. 逃逸与空路径（桥侧还有 root 沙箱，双侧各校验一次，§8.7-5）
+  function sanePath(p) {
+    const s = String(p ?? '').trim();
+    if (!s) throw Object.assign(new Error('output_path 为空'), { stage: 'file' });
+    if (/(^|[\\/])\.\.($|[\\/])/.test(s)) throw Object.assign(new Error('路径不允许包含 ..'), { stage: 'file' });
+    return s;
+  }
+
+  async function writeFile(outputPath, pngBase64) {
+    sanePath(outputPath);
+    const r = await api('/file', {
+      method: 'POST',
+      body: JSON.stringify({ path: outputPath, base64: pngBase64, overwrite: true }), // Agent 显式选路径，重渲同路径应幂等
+    });
+    const body = await r.json().catch(() => ({}));
+    if (!r.ok) throw Object.assign(new Error(body.error || ('落盘失败 HTTP ' + r.status)), { stage: 'file' });
+    return body;   // { ok, path, bytes }
+  }
+
+  async function callTool(params) {
+    const a = params.arguments || {};
+    const fn = { mtp_render: doRender, mtp_detect: doDetect }[params.name];
+    if (!fn) return { content: [{ type: 'text', text: `未知工具 ${params.name}，本页提供 ${TOOLS.map(t => t.name).join(' / ')}` }], isError: true };
+    return fn(a);
+  }
+
+  async function doDetect(a) {
+    if (!String(a.code ?? '').trim())
+      return { content: [{ type: 'text', text: 'mtp_detect 失败：code 为空' }], isError: true };
+    const mode = detectMode(a.code);
+    return {
+      content: [{ type: 'text', text: `语法检测：${MODE_LABEL[mode] || mode}` }],
+      structuredContent: { ok: true, mode },
+    };
+  }
+
+  async function doRender(a) {
+    const t0 = performance.now();
+    const out = await window.__mtpAgent.render({
+      code: a.code, mode: a.mode, scale: a.scale, transparent: a.transparent, background: a.background,
+    });
+    const elapsed = Math.round(performance.now() - t0);
+    if (!out.ok) {
+      const tips = {
+        render: '检查源码语法（Mermaid 原始报错在「原始报错」里）；mode 传 "svg"/"html" 可强制语法分派。',
+        export: 'HTML 若引用外部图片/CSS/字体导出会失败，改为 base64 内联后重试。',
+      };
+      return {
+        content: [{ type: 'text', text: `mtp_render 失败（stage=${out.stage}）：${out.message}`
+          + (out.detail ? ` | 原始报错: ${out.detail}` : '') + ` | 建议: ${tips[out.stage] || '重试一次。'}` }],
+        isError: true,
+      };
+    }
+    const f = await writeFile(a.output_path, out.pngBase64);   // PNG 字节经 /file 直落磁盘，不进 Agent 上下文
+    const kb = (f.bytes / 1024).toFixed(1);
+    return {
+      content: [{ type: 'text', text: `渲染成功：${out.mode} ${out.width}×${out.height}，${kb} KB，${elapsed}ms`
+        + (out.warnings.length ? `；${out.warnings.join('；')}` : '') + ` → ${f.path}` }],
+      structuredContent: { ok: true, mode: out.mode, width: out.width, height: out.height,
+                           bytes: f.bytes, path: f.path, elapsed_ms: elapsed, warnings: out.warnings },
+    };
+  }
+
+  async function pollLoop() {
+    if (polling) return;
+    polling = true; stop = false;
+    let backoff = 2000;
+    while (!stop) {
+      try {
+        const r = await api('/poll');
+        backoff = 2000;
+        if (r.status === 204) continue;                       // 长轮询到期无请求，立即再挂
+        if (r.status === 401) { token = ''; setStatus('令牌失效，请重新配对', false); break; }
+        if (!r.ok) { setStatus(`桥连接异常（HTTP ${r.status}），${backoff / 1000}s 后重连`, false); await sleep(backoff); backoff = Math.min(backoff * 2, 10000); continue; }
+        const req = await r.json();
+        if (req.method === 'tools/call') {
+          let result;
+          try { result = await callTool(req.params); }
+          catch (e) { result = { content: [{ type: 'text', text: `工具执行失败（stage=${e.stage || 'export'}）：${(e && e.message) || e}` }], isError: true }; }
+          try { await api('/reply', { method: 'POST', body: JSON.stringify({ id: req.id, result }) }); }
+          catch (e) { console.warn('[mtp-agent] 结果回传失败', e); }
+        }
+      } catch (e) {
+        setStatus(`桥未运行（端口 ${port}），${backoff / 1000}s 后重试`, false);   // 静默退避，绝不弹窗
+        await sleep(backoff);
+        backoff = Math.min(backoff * 2, 10000);
+      }
+    }
+    polling = false;
+  }
+
+  async function connect(p, code) {
+    port = Number(p) || DEFAULT_PORT;
+    localStorage.setItem('mtp.agent.port', String(port));
+    const r = await fetch(`http://127.0.0.1:${port}/pair`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }),
+    });
+    if (!r.ok) throw new Error(((await r.json().catch(() => ({}))) || {}).error || ('HTTP ' + r.status));
+    token = (await r.json()).token;
+    await hello();
+    setStatus(`已连接（端口 ${port}）`, true);
+    pollLoop();
+  }
+
+  function disconnect() {
+    stop = true;
+    if (token) api('/bye', { method: 'POST', keepalive: true }).catch(() => {});
+    token = '';
+    setStatus('未连接', false);
+  }
+
+  window.addEventListener('beforeunload', () => {             // 尽力通知桥立即换新配对码（§8.3）
+    if (token) navigator.sendBeacon?.(`http://127.0.0.1:${port}/bye`) ||
+      fetch(`http://127.0.0.1:${port}/bye`, { method: 'POST', keepalive: true, headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
+  });
+
+  return { connect, disconnect, isPaired: () => Boolean(token), TOOLS, setStatus };
+})();
+
+(function agentPanelInit() {
+  const panel = $('agentPanel');
+  $('btnAgent').addEventListener('click', () => panel.classList.toggle('open'));
+  panel.addEventListener('pointerdown', e => e.stopPropagation());
+  document.addEventListener('pointerdown', e => {
+    if (panel.classList.contains('open') && !panel.contains(e.target)
+        && !(e.target && e.target.id === 'btnAgent')) panel.classList.remove('open');
+  });
+  $('agentPort').value = localStorage.getItem('mtp.agent.port') || 47870;
+  $('btnAgentConnect').onclick = async () => {
+    const btn = $('btnAgentConnect');
+    btn.disabled = true;
+    __mtpAgentBridge.setStatus('连接中…', false);
+    try {
+      await __mtpAgentBridge.connect($('agentPort').value, $('agentCode').value.trim());
+      $('agentCode').value = '';
+      panel.classList.remove('open');
+    } catch (e) { __mtpAgentBridge.setStatus('配对失败：' + ((e && e.message) || e), false); }
+    btn.disabled = false;
+  };
+  $('btnAgentDisconnect').onclick = () => __mtpAgentBridge.disconnect();
+})();
 
 /* ================= 启动 ================= */
 console.info('[MermaidToPng] 外观系统 v6：标题=图片突出色 · 其他文字=图片辅助色 · 背景支持水平翻转 · 主按钮=玻璃；若行为异常请 Ctrl+F5 强刷');
