@@ -30,6 +30,10 @@ const argValues = (name) => {
 };
 const argValue = (name, fallback) => argValues(name)[0] ?? fallback;
 const PORT = Number(argValue('--port', process.env.MTP_MCP_PORT ?? '47870'));
+// --code：固定配对码（手动/脚本启动时 Agent 自选，免去抓 stderr）；--keep：stdin 关闭不退出
+//（MCP stdio 未挂接的手动场景，如 `start node mtp-mcp.mjs --keep --code AB12CD`）。
+const FIXED_CODE = String(argValue('--code', process.env.MTP_MCP_CODE ?? '')).trim().toUpperCase();
+const KEEP_ALIVE = process.argv.includes('--keep');
 const ROOTS = (argValues('--root').length
     ? argValues('--root')
     : [process.env.MTP_MCP_ROOT]).filter(Boolean).map(r => resolvePath(r));
@@ -45,7 +49,7 @@ const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const newCode = () => Array.from({ length: 6 }, () => CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]).join('');
 
 const state = {
-    code: newCode(),
+    code: /^[A-Z0-9]{6}$/.test(FIXED_CODE) ? FIXED_CODE : newCode(),
     token: null,
     origin: null,
     lastSeen: 0,
@@ -169,7 +173,15 @@ const server = createServer(async (req, res) => {
     }
     try {
         if (req.method === 'GET' && url.pathname === '/status') {
-            sendJson(res, 200, { name: 'mtp-mcp', version: VERSION, paired: connected(), port: PORT });
+            // 浏览器发起的 fetch 必带 Origin / Sec-Fetch-Site：对这些请求不给配对码，
+            // 防恶意网页自动配对；curl / node / Agent 脚本（无这些头）可直接取码。
+            const site = String(req.headers['sec-fetch-site'] ?? '');
+            const browserFetch = Boolean(req.headers.origin)
+                || ['cross-site', 'same-site', 'same-origin'].includes(site);
+            sendJson(res, 200, {
+                name: 'mtp-mcp', version: VERSION, paired: connected(), port: PORT,
+                ...(browserFetch ? {} : { code: state.code }),
+            });
             return;
         }
         if (req.method === 'POST' && url.pathname === '/pair') {
@@ -361,6 +373,10 @@ rl.on('line', async (line) => {
     }
 });
 rl.on('close', () => {
+    if (KEEP_ALIVE) {
+        log('stdin 已关闭（--keep）：以独立本地服务模式继续运行（MCP stdio 不可用，仅 HTTP）');
+        return;
+    }
     server.close();
     process.exit(0);
 });

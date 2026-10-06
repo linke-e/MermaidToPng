@@ -157,7 +157,7 @@ graph LR
 
 | 端点 | 方法 | 作用 |
 |---|---|---|
-| `/status` | GET | `{name, version, paired}`（未配对探测用） |
+| `/status` | GET | `{name, version, paired, port}`；**非浏览器请求**（无 Origin / Sec-Fetch-Site）额外返回 `code`，Agent 一条 curl 即可取配对码，浏览器 fetch 拿不到（防恶意网页自动配对） |
 | `/pair` | POST | 页面提交 6 位配对码 → 发 Bearer token；新配对踢旧页并换新码 |
 | `/hello` | POST | 页面上报工具清单 → 桥发 `tools/list_changed` 通知 Agent |
 | `/poll` | GET | 长轮询领任务（25s 空转返回 204；同刻只保留一个长轮询） |
@@ -168,6 +168,8 @@ graph LR
 - MCP 侧（stdio）：`initialize`（instructions 引导 Agent 未连接先调 `mtp_connect`）、`ping`、`tools/list` = [`mtp_connect`（桥内置，返回配对码与端口）] + 页面工具、`tools/call` → `forward()` 入队等 `/reply`；prompts 透传（本项目的页面上报为空）
 - 连接管理：页面 45s 无心跳即断开并换新配对码、清空 pending；桥进程生命周期归 Agent（stdio 父进程），**无服务注册、无端口常驻、无僵尸进程问题**
 - CORS/预检：回显 Origin（或 `null`）+ `Access-Control-Allow-Private-Network: true`（Chrome 从 https/file 页面访问 127.0.0.1 的 PNA 预检）——file:// 本地页与线上 https 页均可连
+- 启动参数：`--port` / `--root`（可多次）/ `--code <6位>`（固定配对码，重启不换）/ `--keep`（stdin 关闭不退出——未注册 MCP 的客户端用终端手动拉桥时必带，否则桥随 shell 关闭静默死亡）
+- 丝滑路径：Agent 把 `http://www.jjmermaid.xin/?mtp=<端口>:<配对码>` 发给用户，页面读参自动填面板并连接
 - 常量实测值：POLL_WAIT 25s / PAGE_TIMEOUT 45s / CALL_TIMEOUT 30min / 请求体上限 64MB
 
 ### 8.3 页面侧
@@ -264,6 +266,9 @@ MermaidToPng/
 | 工具结果体积 <4KB（PNG 字节不进上下文） | ☑ 2026-10-06 |
 | `deploy/index.html`（https）连同一个本地桥成功 | ☑ 2026-10-06（以本地 http 静态服务模拟部署页源验证连通；纯 https 站点待上线后复验） |
 | 连续调用无残留 node 进程 / 端口占用（桥随 Agent stdio 生命周期） | ☑ 2026-10-06（桥重启×2 + 18 个测试孤儿进程全清后 0 残留） |
+| `/status` 非浏览器请求返回 `code`、浏览器 fetch 拿不到（安全门控） | ☑ 2026-10-06 |
+| `--code` 固定配对码 / `--keep` stdin 关闭驻留 | ☑ 2026-10-06 |
+| `?mtp=端口:配对码` 链接打开页面 → 自动填面板并连接成功（toast 提示） | ☑ 2026-10-06 |
 
 e2e 合计 18/18（file:// 与 http 两种页面来源 × 配对/列表/三语法渲染/沙箱/断开感知/结果体积）。
 

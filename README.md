@@ -1,6 +1,7 @@
 # MermaidToPng
-Mermaid / SVG / HTML 代码转 PNG 图片工具（便携版）
+Mermaid / SVG / HTML 代码转 PNG 图片工具
 将 Mermaid 图表、SVG 矢量图、HTML 片段或完整网页渲染为高清 PNG，单文件、免安装、离线可用。
+线上版 http://www.jjmermaid.xin
 ## 特性
 - **三语法支持** —— 粘贴 Mermaid / SVG / HTML 均可渲染导出，语法自动识别，也可手动指定模式
 - **外观设置** —— 上传图片设为全局背景，填充方式 / 缩放 / 模糊 / 遮罩强度四参数实时可调（数字输入，无滑块）；标题栏与两个页面顶部栏自动启用玻璃模糊；三个主标题取图片主色，其余文字与背景图差值混合；设置含背景图一并持久化到本地
@@ -48,3 +49,5 @@ Mermaid / SVG / HTML 代码转 PNG 图片工具（便携版）
 python fetch_mermaid.py      # 拉取新版 mermaid.min.js
 ```
 拉取后需将新库重新内联进 `MermaidToPng.html`（替换文件中第一个 `<script>...</script>` 内联块，即 mermaid 库所在块）。
+## 石墩子旋转一小时
+![Stone Badge](https://stone.professorlee.work/api/stone/linke-e/MermaidToPng)

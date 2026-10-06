@@ -1,4 +1,4 @@
-# MermaidToPng Agent 接口层 v2：桥模式
+# MermaidToPng Agent 接口层 ：桥模式
 
 > 让任意 Agent 在会话内直接「图表源码 → PNG 落盘」。
 > **工具全部在网页里执行**；本地只有 `agent/mtp-mcp.mjs` 一个纯转发 MCP 桥（零依赖，Node 18+）。
@@ -14,7 +14,7 @@ Agent ──stdio MCP──▶ mtp-mcp.mjs ──HTTP长轮询(127.0.0.1:47870)�
 
 页面入口（任选其一，均连同一个本地桥）：
 
-- **直接访问 http://www.jjmermaid.xin（推荐，始终最新版）；
+- 直接访问 http://www.jjmermaid.xin（推荐，始终最新版）；
 - 或双击本地 `MermaidToPng.html`（file:// 可用，零部署）。
 
 ## 本地文件
@@ -55,7 +55,27 @@ agent/
 
 每次页面断开/刷新或桥重启都会换新配对码；Agent 端工具会报「页面未连接」，重调 `mtp_connect` 取新码再配对即可。
 
-## 工具
+## 手动启动（不想注册 MCP 的客户端）
+
+Agent 没有本桥的 MCP 注册、只有终端时，自己拉起桥（**务必带 `--keep`**：桥默认随 stdin 关闭退出，
+shell 后台/管道方式启动 stdin 会立刻关闭导致静默死亡）：
+
+```bash
+node <项目目录>/agent/mtp-mcp.mjs --port 47870 --keep --code AB12CD &
+curl http://127.0.0.1:47870/status
+# → {"name":"mtp-mcp","version":"2.0.0","paired":false,"port":47870,"code":"AB12CD"}
+```
+
+- `--code`：固定配对码（6 位大写字母数字），重启不再换码；不传则随机
+- `--keep`：stdin 关闭不退出，以独立本地服务模式驻留（此模式 MCP stdio 不可用，仅 HTTP）
+- `/status` 对非浏览器请求（curl / node / Agent 脚本）直接返回 `code`，浏览器 fetch 拿不到（防恶意网页自动配对）
+
+拿到码后二选一：
+
+1. 告诉用户在页面 Agent 面板填码连接（流程同上）；
+2. **把带参链接发给用户，点开即连**：`http://www.jjmermaid.xin/?mtp=47870:AB12CD`（本地文件亦可：`MermaidToPng.html?mtp=47870:AB12CD`）。
+
+## Agent 工具
 
 ### `mtp_render(code, output_path, mode?, scale?, transparent?, background?)`
 
@@ -97,6 +117,7 @@ agent/
 | 403 path outside root | `output_path` 不在 `--root` 列表内；用相对路径或去配置里加 root |
 | 页面后台不动了 | 后台标签页节流——把页面标签页保持前台，或常驻一个窗口 |
 | 47870 被占 | 换 `--port`（页面面板同步改） |
+| 手动启动的桥秒退 | 没带 `--keep`：stdin 关闭桥即退出（MCP stdio 生命周期约定）；手动/脚本启动必须 `--keep` |
 
 ## 维护
 

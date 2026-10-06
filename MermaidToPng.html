@@ -3700,6 +3700,23 @@ window.__mtpAgentBridge = (function () {
     btn.disabled = false;
   };
   $('btnAgentDisconnect').onclick = () => __mtpAgentBridge.disconnect();
+  // ?mtp=端口:配对码 —— Agent 把带参链接发给用户，点开即自动连接（丝滑路径）
+  const mtp = new URLSearchParams(location.search).get('mtp');
+  if (mtp) {
+    const [pt, cd] = mtp.split(':');
+    if (pt && cd) {
+      $('agentPort').value = pt.trim();
+      $('agentCode').value = cd.trim().toUpperCase();
+      (async () => {
+        try { await __mtpAgentBridge.connect(pt.trim(), cd.trim().toUpperCase()); }
+        catch (e) {
+          const msg = '自动连接失败：' + ((e && e.message) || e);
+          __mtpAgentBridge.setStatus(msg, false);
+          __mtpAgentBridge.toast(msg, 'err');
+        }
+      })();
+    }
+  }
 })();
 
 /* ================= 启动 ================= */
