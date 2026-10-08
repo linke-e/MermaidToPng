@@ -4,6 +4,7 @@
 > 状态：**已实现并实测通过**
 > 入口：`MermaidToPng.html` 双击即用；线上版 **http://www.jjmermaid.xin**。
 > Agent 接口层 v2（桥模式：工具全部在网页里执行，MCP 桥纯转发 + `/file` 落盘）：架构见 §8，**已实现并实测通过**（v1 CDP 无头方案曾实现并验证，按 §8.0 的理由替换移除）。
+> 编辑层 v3（§9：「进入编辑」→ 组件拖拽 / 改文字 / 改样式 → 所见即所得 → 回写源码）：**已实现并实测通过**。测试钩子 `window.__mtpEdit`（§9.7）；回归脚本在 `.tmp_verify/run_verify.py`（gitignore，本地跑）。
 
 ## 1. 需求 → 设计映射
 
@@ -15,7 +16,7 @@
 | HTML 输入渲染 | `renderHTML`：srcdoc iframe 挂载（片段自动包装成最小文档 + inline-block 包裹层）；`pointer-events:none` 让缩放/拖拽事件穿透到 stage；尺寸自动测量（见下） |
 | HTML 尺寸测量 | 片段：包裹元素 `getBoundingClientRect`（收缩到内容）；完整文档：`body.getBoundingClientRect` 优先（尊重显式宽高），仅当内容真溢出容器（scroll > client）才扩展；工作宽 900px，溢出放宽上限 3840，高度按内容实测 |
 | HTML 导出 | `buildHTMLExportSvg`：克隆 `documentElement` 包进 `<foreignObject>`（width/height=实测尺寸）→ `lastRawSvg` → 与 Mermaid 相同的 SVG→img→Canvas 管线；iframe 中 `<script>` 已执行，克隆的是最终 DOM |
-| 预览图可缩放、拖拽 | `#stage`（overflow:hidden 视口）+ `#viewport`（CSS `translate+scale`，origin 左上）；滚轮以鼠标位置为不动点缩放；Pointer Events 拖拽；双击/按钮适应窗口；1:1 按钮 |
+| 预览图可缩放、拖拽 | `#stage`（overflow:hidden 视口）+ `#viewport`（CSS `translate+scale`，origin 左上）；滚轮以鼠标位置为不动点缩放；Pointer Events 拖拽；按钮适应窗口（「适应」「1:1」；2026-10-08 起移除双击适应——双击在编辑模式承担改文字，画布双击易误触） |
 | 下载 PNG 且可选位置 | SVG → `data:image/svg+xml` → `<img>` → Canvas（倍率缩放）→ `toBlob` → `<a download>` 触发浏览器另存为对话框（用户自选位置） |
 | 导出背景色 | `input[type=color]` 底色选择器，Canvas `fillRect` 填色；透明底勾选优先并联动置灰；选择存 localStorage |
 | 所见即所得背景 | 预览画布背景实时同步所选底色（`syncStageBg`，改色/透明/启动三处触发）；透明底时预览显示棋盘格占位，导出 PNG 为真透明 |
@@ -25,7 +26,7 @@
 
 | 方案 | 体积 | 依赖 | 保存位置对话框 | 结论 |
 |---|---|---|---|---|
-| **单文件 HTML** ✅ | ~2.6MB（主要是 mermaid.js） | 无（双击即用） | 浏览器原生另存为 | 采纳 |
+| **单文件 HTML** ✅ | ~2.8MB（主要是 mermaid.js，2026-10 实测 2.77MB） | 无（双击即用） | 浏览器原生另存为 | 采纳 |
 | mermaid-live-editor（官方） | 整套 SvelteKit 工具链 | pnpm/Docker | 浏览器另存为 | 功能全但过重，且仅 SVG 导出一等公民 |
 | Electron | ~150MB 打包 | Node + 打包链 | 原生对话框 | 杀鸡用牛刀 |
 | Tauri | ~10MB | Rust 工具链 | 原生对话框 | 需 Rust，维护成本高 |
@@ -77,8 +78,10 @@ graph TD
 
 ```
 MermaidToPng/
-├── MermaidToPng.html    # 全部应用代码 + 内联 mermaid 库（2.6MB，双击即用）
+├── MermaidToPng.html    # 全部应用代码 + 内联 mermaid 库（~2.8MB，双击即用）
 │                        #   v2：+ Agent 按钮（header「外观」左侧）/ 右上角配对面板 / 桥客户端 / mtp_render·mtp_detect 工具实现（§8.3，页面内增量）
+│                        #   v3：+ 编辑层（§9）：header「进入编辑⇄退出编辑/撤销/重做/导入/保存」、左栏「源码|编辑」双 Tab + 分组编辑栏、
+│                        #        自绘 SVG 交互层（拖拽/8 向 resize/双击改文字/快捷键）、window.__mtpEdit 钩子、.mte sidecar
 ├── agent/
 │   ├── mtp-mcp.mjs      # v2 MCP 桥（§8.2，已实现）：纯转发 + /file 落盘，零依赖 Node 18+
 │   └── README.md        # Agent 接口层使用说明（注册 / 自测 / 排障）
@@ -278,16 +281,250 @@ e2e 合计 18/18（file:// 与 http 两种页面来源 × 配对/列表/三语�
 - `theme` 参数（mermaid 主题切换，需 re-initialize）/ SVG 直出（信封加字段即可）
 - 多页面 / 多 Agent 并发（当前单页面单 Agent 够用）
 
-## 9. 参考资料
+## 9. 编辑层 v3：「进入编辑」所见即所得
+
+> **状态：架构定稿，未实现——实现交 Zcode，本文档即实现合同。**
+> 业务场景：用户导入一份 Mermaid 逻辑图，点「进入编辑」→ 页面进入编辑模式、展开编辑栏（分组：组件/字体/颜色/外观/布局）→ 从组件分组拖节点进画布、调整大小、双击直接改文字，改字体/字体颜色/背景色/边框色等 → 实时所见即所得 → 自动生成最新 Mermaid 源码，可保存/复制/导出。
+> 参考：GPT 分析（`D:\Users\lt\Downloads\Untitled-1.md`）裁剪为单文件零依赖现实。保留其三支柱——Document Model 唯一编辑状态、Command 总线、Registry 扩展；舍弃 React/Vite/多文件工程化。
+
+### 9.0 三个定稿决策（Zcode 不要再改）
+
+| # | 决策 | 理由 |
+|---|---|---|
+| **D1** | **Mermaid 源码只是 I/O 格式，编辑状态 = 自有 Document Model（`MteDoc`）**。导入：Parser 源码→Model；编辑：只改 Model；导出：Serializer Model→源码。禁止把 mermaid 渲染出的 SVG DOM 当数据源，禁止在源码字符串上直接做视觉编辑 | 否则拖拽/样式/撤销全是字符串碎片手术，不可维护；后续加"改连线/批量编辑/撤销重做"会推倒重来 |
+| **D2** | **编辑模式画布 = 自绘 SVG 交互层，不依赖 mermaid 布局**。预览模式照旧 `renderMermaid`（mermaid 自动布局，只读）；点「进入编辑」切换为自绘画布——节点 = `<rect>+<text>` 组合，边 = 贝塞尔 `<path>`，坐标取自 Model.layout | mermaid 是自动布局引擎（dagre）：节点坐标只读，任何属性改动触发全图重排，"拖动/调整大小"会被重排吃掉，WYSIWYG 不成立。只有自绘层能拖动/resize/选中/双击编辑。两模式渲染同一份 Model，语义一致 |
+| **D3** | **位置/大小不回写 Mermaid 源码语义；样式回写**。`x/y/w/h` 存 Model 的 `layout` 段（持久化进 `.mte` sidecar）；`字体/颜色/背景/边框` 序列化为 `classDef` + `class` 语句 | mermaid 没有节点坐标语法，硬塞定位做不到；位置丢了仍可靠 mermaid 重新布局打开源码，只是不保留手工布局（可接受降级） |
+
+### 9.1 数据流闭环
+
+```mermaid
+graph LR
+  S["Mermaid 源码<br>Code 页 textarea"] -->|"导入 / 源码编辑（400ms 防抖）"| P["Parser<br>自研行级解析 + mermaid.parse 语法校验"]
+  P --> M["Document Model（MteDoc）<br>★ 唯一编辑状态"]
+  M -->|"Serializer<br>样式去重→classDef/class"| S
+  M --> R["预览模式：renderMermaid<br>自动布局 · 只读"]
+  M --> C["编辑模式：自绘画布<br>rect+text+path 交互层"]
+  C -->|"任意交互 → Command"| CM["CommandManager<br>+ HistoryManager"]
+  CM --> M
+  M -->|"编辑画布根即 svg 元素"| E["exportPNGBlob<br>复用现有导出管线"]
+```
+
+修改方向永远是 `画布交互 → Command → Model →（Serializer→源码 & 画布局部刷新）`；**禁止 UI 直接改 Model，禁止 UI 直接拼源码**。
+
+### 9.2 Document Model（schemaVersion 1.0）
+
+```typescript
+/** 文档根：Single Source of Truth */
+interface MteDoc {
+  schemaVersion: "1.0";          // 升级走 Migration（fromVersion→toVersion 迁移函数，按 schemaVersion 分发）
+  diagramType: "flowchart";      // MVP 仅 flowchart；字段即扩展点
+  nodes: MteNode[];              // subgraph 物化为 group 节点（children）
+  edges: MteEdge[];
+  layout: {                      // D3：画布布局数据，不回写源码
+    canvas: { w: number; h: number };
+    node: Record<string, { x: number; y: number; w: number; h: number }>;
+  };
+  meta: { createdAt?: string; updatedAt?: string; extensions?: Record<string, unknown> };
+}
+
+interface MteNode {
+  id: string;                    // 导入保留原 id；新建 genId() 生成（n1,n2…）防冲突
+  type: "rect" | "round" | "diamond" | "cylinder" | "circle" | "stadium" | "parallelogram" | "group";
+  text: string;                  // '\n' ↔ 源码 <br/>
+  style: {                       // 全部物化到节点（导入展开，导出去重合并，§9.8-8）
+    fontFamily?: string; fontSize?: number; bold?: boolean; italic?: boolean;
+    color?: string;              // 字体颜色
+    bg?: string;                 // 组件背景色
+    stroke?: string;             // 组件边框色
+    strokeWidth?: number; radius?: number; dashed?: boolean;
+  };
+  children?: string[];           // 仅 group（subgraph 成员）
+}
+
+interface MteEdge {
+  id: string;
+  from: string; to: string;      // 节点 id（Validator 保证引用合法）
+  label?: string;
+  kind: "arrow" | "line" | "dotted" | "thick";   // 箭头实线 --> / 无箭头 --- / 虚线 -.-> / 粗线 ==>
+  // 阶段2预留（模型先留字段，UI 不开放）：颜色/线宽/箭头样式 open(--o) cross(--x)/折点
+}
+```
+
+### 9.3 模式与 UI（2026-10-08 修订：编辑模式唯一入口 = 左栏「编辑」Tab）
+
+```text
+┌──────────────────────────────────────────────────────────────┐
+│ header: logo · 【撤销 · 重做 · 导入 · 保存】(编辑模式才显示) · Agent · 外观 │
+├────────────┬─────────────────────────────────┬───────────────┤
+│ 左栏双 Tab  │ 画布（编辑模式 = 自绘 SVG 交互层） │ （现有两栏结构 │
+│ [源码|编辑] │        （预览模式 = mermaid 渲染）  │  不变，可拖分栏）│
+│ 编辑栏      │  拖入/选中/移动/resize/双击改文字   │               │
+│ · 组件      │  单选显示 8 向 resize 手柄；        │               │
+│ · 字体      │  Ctrl+点击加选/减选；Ctrl+空白框选； │               │
+│ · 颜色      │  Delete 删除（多选批量）；          │               │
+│ · 外观      │  Ctrl+Z/Y 撤销重做；Ctrl+Alt+S 保存 │               │
+│ · 布局      │                                 │               │
+└────────────┴─────────────────────────────────┴───────────────┘
+```
+
+- **进入/退出编辑只经「编辑」Tab**：点「编辑」= 进入（自动解析+切自绘画布+展开分组）；点「源码」= 退出（回写源码+回预览渲染）。header 无「进入编辑」按钮，只有编辑模式工具组（撤销/重做/导入/保存，`body.edit-mode` 控制显隐）。左栏 `data-tab` 初始即 `code`——首次打开页面源码页不渲染编辑栏内容。
+- 编辑栏配色：分组标题/激活 Tab/焦点边框 = 背景图突出色（`--vivid`）；分组正文与标签 = 背景图主色（`--dominant`，extractPalette 加权最高桶提亮）；无背景图时用 `:root` 默认（vivid 紫 `#8b5cf6`）。外观分组风格参考 CodePen accordion（实色标题条+左色条+展开高亮+item 分隔线）。
+- 键盘/鼠标：`双击`节点改文字（浮层 `<textarea>`：**Enter 直接保存**、Shift+Enter 换行、Esc 取消、点其他位置/节点=失焦保存；等价入口=字体组顶部「文本内容」输入框，多选时作用于全部选中）；`Ctrl+Z` 撤销、`Ctrl+Y / Ctrl+Shift+Z` 重做；`Ctrl+Alt+S` 保存 .mte；`Ctrl+点击`加选/减选；`Ctrl+空白拖拽`框选（命中=包围盒相交）；`Delete/Backspace` 删除（多选走 `nodes.delete`，选中边时删边）；`Enter` 进入文本编辑（单选时）。
+- **连线组件（组件面板「箭头/实线/虚线」，点击卡片即进入连线模式）**：画布上所有节点显示 8 锚点（四角+四边中点）→ 点选起点锚点（节点高亮变色）→ 点选终点锚点 → 建边（锚点随边存 `doc.layout.edge[edgeId] = {a, b}`，D3 不回写源码）；**点节点任意位置 = 兜底吸附最近锚点**；Esc 或点空白取消，不保存。
+- **边编辑（点击边选中，显示三个编辑点）**：首/尾方块——点击进入端点重选模式（全节点显示锚点，可点同节点其他位置或**换节点**，落 `edge.anchor` 命令）；中点圆——拖动弯折曲线（二次贝塞尔反解控制点，落 `edge.mid` 命令，曲线中点恰为拖动点）；Esc 取消重选、Delete 删边；选中边后点击节点/空白取消边选中。命中判定无条件覆盖首尾（弯折点存在与否不影响）。
+- **标注组件（label）**：无边框、背景透明，用于线上文字标注；**点选与框选均可选中，且点选优先级最高**（点击落在标注包围盒内强制选中，先于其他节点/边——标注文字单独开启指针命中）；字体/字号/颜色/加粗/斜体/对齐/背景不透明度全部适用。序列化自动注入 `fill:none,stroke:none,stroke-width:0px` 的 classDef，parser 读回 `fill:none+stroke:none` 的节点自动识别为 label（round-trip 保形）。
+- **画布浏览（编辑页）**：编辑模式滚轮 = 缩放（与预览模式一致）。2026-10-08 第五轮起移除「滚轮纵向平移 + PageUp/PageDown 大步翻页」——**预览页固定不翻页**，上下滚动交给编辑栏自身（用户要求：编辑区展开的组件要能滚动看全）。空白处拖拽仍为平移。
+- 多选规则：`selectedIds` 全集 + `selectedId` 主选中（最后一个）；样式改动作用于全部选中节点（逐节点命令，各自可 undo）；移动多选 = `node.moveMany` 一条命令；框选/多选时不显示 resize 手柄、布局分组置灰。颜色组为紧凑行式（一个子项一行一个色块，点击色块唤起原生取色器）；外观组的「背景不透明度」为**节点级样式**（`style.bgOpacity` ↔ 源码 `fill-opacity`，作用于选中组件，**分组/标注同样适用**，改其他颜色不会重置它）；开关类控件（虚线/透明底）为左右滑块（`.mte-switch`，checked=霓虹紫）。
+- 保存：`.mte` sidecar（JSON：`{schemaVersion, source, doc, savedAt}`）经 `<a download>` 落盘；「复制源码」仍用 CODE 页复制按钮（退出编辑后源码已回写）。
+
+### 9.4 单文件模块划分（页面内命名空间，全部增量进主文件）
+
+| 命名空间 | 职责 | 关键接口 |
+|---|---|---|
+| `Editor.model` | MteDoc 结构、默认值、id 生成、深拷贝、Migration 入口 | `createDoc() / cloneDoc() / genId()` |
+| `Editor.parser` | 源码 → MteDoc（自研行级解析，语法白名单见 §9.8-2）；mermaid.parse 只做语法预检 | `parseFlowchart(src): {doc, warnings[]}` |
+| `Editor.serializer` | MteDoc → 源码（样式去重生成 classDef/class；布局不回写） | `serialize(doc): string` |
+| `Editor.commands` | 全部修改动作的 Command 实现（§9.5） | `exec(type, payload)` |
+| `Editor.history` | 撤销/重做栈、命令合并 | `undo() / redo() / push(cmd)` |
+| `Editor.registry` | ComponentRegistry / ToolbarGroupRegistry（§9.6） | `register(def)` |
+| `Editor.canvas` | 自绘画布：渲染、选中/手柄、拖拽/resize/文本浮层、局部刷新 | `mount(container) / render(doc) / refreshNode(id)` |
+| `Editor.panel` | 编辑栏渲染（分组手风琴、控件绑定 Command）、模式切换 | `init() / setMode(edit|preview)` |
+| `Editor.sync` | 源码 ⇄ Model 双向同步、防环（origin 标记）、localStorage 快照 | `onCodeChange(src) / writeCode(doc)` |
+| `window.__mtpEdit` | 测试钩子（只增不改，同 `__mtp` 约定） | 见 §9.7 |
+
+预估增量 <60KB 原生 JS；仍零依赖、零构建、单文件直开。
+
+### 9.5 Command 与撤销
+
+所有修改走命令；每条命令实现 `apply(doc) / revert(doc)`：
+
+| 命令 | payload | 合并策略 |
+|---|---|---|
+| `node.add` | `{node, x, y}`（drop 时生成） | — |
+| `node.delete` | `{id}`（**级联删关联边**，revert 恢复） | — |
+| `node.text` | `{id, text}` | 同 id 连续输入 800ms 窗口合并为一条 |
+| `node.style` | `{id, patch}` | 同 id 同字段合并 |
+| `node.move` | `{id, x, y}` | pointermove 只改画布不落栈；pointerup 才入栈（性能，§9.8-7） |
+| `node.resize` | `{id, w, h}` | 同 move |
+| `edge.add / edge.delete` | `{from,to,kind,label}` / `{id}` | 模型与命令先行，画布 UI 阶段 2 开放 |
+
+撤销栈上限 100；`Ctrl+Z` 跨命令类型不合并。
+
+### 9.6 Registry：组件与编辑栏都不写死
+
+```typescript
+interface ComponentDefinition {          // ComponentRegistry.register()
+  type: MteNode["type"]; label: string;  // 「矩形/菱形/圆柱(数据库)…」
+  thumbnail: string;                     // 内联 SVG 缩略图（编辑栏卡片）
+  createDefault(): MteNode;              // 默认尺寸/文本/样式
+}
+interface ToolbarGroup {                 // ToolbarGroupRegistry.register()
+  id: string; title: string; order: number;
+  visible(ctx: EditorContext): boolean;  // 如：无选中节点时字体/颜色组置灰
+  controls: ToolbarControl[];            // 声明式控件 → 自动绑定 Command
+}
+```
+
+内置组件（MVP）：矩形、圆角、菱形、圆柱、圆、Stadium、平行四边形、group。
+内置分组：
+
+| 分组 | 控件 | 作用对象 |
+|---|---|---|
+| 组件 | 形状缩略卡片 ×N，**拖拽进画布落点即坐标** | 新增节点 |
+| 字体 | 字族 / 字号 / 粗体 / 斜体 / 对齐 | 选中节点 |
+| 颜色 | 字体颜色 / 背景色 / 边框色（color input） | 选中节点 |
+| 外观 | 边框宽度 / 圆角 / 虚线开关 | 选中节点 |
+| 布局 | X / Y / W / H 数值输入 + 「适应画布」 | 选中节点 |
+
+后续加"连接线/高级"分组 = 只 `register()`，不改 Editor Core。
+
+### 9.7 与现有管线的集成（复用清单）
+
+| 现有资产 | 编辑层用法 |
+|---|---|
+| `renderMermaid` / 视口 `zoomAt/fitView`/pointer 拖拽 | 预览模式原样；编辑画布挂进同一 `#viewport`，缩放平移免费获得 |
+| `exportPNGBlob` | 编辑画布根节点即 `<svg>`，serialize 后走 `lastRawSvg` 同一导出管线（倍率/透明底/背景色全兼容） |
+| `tolerantMermaid` | Parser 前置容错复用其补引号等改写 |
+| localStorage | 源码照旧 `mtp.code`；新增 `mtp.doc`（模型+layout 快照，1s 节流），刷新恢复编辑现场 |
+| `window.__mtp` / `__mtpAgent` / MCP 桥 | **签名不动**；新增 `window.__mtpEdit`：`enter()/exit()/doc()/exec()/addNode(type,x,y)/select(id)/updateText(id,t)/updateStyle(id,patch)/move(id,x,y)/resize(id,w,h)/del(id)/undo()/redo()/serialize()/importDoc(src)` —— Zcode 验收全走此钩子 |
+| `deploy/index.html` | 照旧逐字节同步 |
+
+`.mte` sidecar 的存在让"手工布局"可持久：重新打开时 `parse → layout 覆盖`，还原编辑现场；只有裸源码时退回 mermaid 自动布局（导入流程：先用 mermaid 渲染一次取自然坐标当 layout 初值——单次 `renderMermaid` 后读各节点 `transform` 填 layout，用户看到的编辑画布初始即 mermaid 布局，衔接无缝）。
+
+### 9.8 坑清单（Zcode 必读）
+
+1. **mermaid.parse 的 AST 不公开不稳定** → 只当语法校验器；结构解析自研（§9.4 `Editor.parser`）。别试图 `JSON.stringify(parse结果)` 挖节点。
+2. **自研解析器写死白名单子集**：`id`、`id["label"]`、`id(label)`、`id{label}`、`id([label])`、`id[(label)]`、链式 `A-->B-->C`、`A & B --> C`（拆多条边）、`-->|lbl|` / `---` / `-.->` / `==>`、`subgraph id [title] … end`、`classDef`/`class`/`style`、`%%注释`、空行。**未覆盖语法不丢**：原样存 `meta.extensions.rawLines`，进编辑时 warnings 提示"第 N 行语法未支持，编辑将忽略"。宁可诚实降级，不要静默吞。
+3. **节点必须纯 SVG（rect/text/tspan/path），禁 foreignObject**——导出管线 SVG→img→Canvas 会禁外部内容，这是本项目 `htmlLabels:false` 的同一个坑（§4 初始化行）。编辑画布节点文字用 `<tspan>` 多行（`\n` 拆行），字体度量用 `getBBox` 自适应宽高。
+4. **label 转义**：源码侧双引号包裹 label 内 `"` → `#quot;`；`<br/>` ↔ `\n` 往返必须成对实现（round-trip 测试覆盖）。
+5. **id 冲突**：新建 `genId()` 检查现有 nodes；导入时 id 重复 = 解析错误提示。中文 id 合法但要原样保留，别 transliterate。
+6. **双向同步防环**：`Editor.sync` 所有回写带 origin（`'code'|'canvas'`），程序写 textarea 不触发防抖重解析——否则 Code 页 ↔ 画布死循环。
+7. **拖动性能**：pointermove 只改画布 DOM（transform/attr），pointerup 才落 Model 入栈；Serializer 也只在命令落地后异步跑（requestIdleCallback），不随每帧跑。
+8. **样式物化/去重**：导入时把 `classDef/class/style` 全部展开进 `node.style`（模型内没有共享类引用，简单）；序列化时按样式签名分组去重生成 `classDef c0,c1… + class n1,n2 c0`，内联 `style` 仅用于单节点特例。round-trip 目标：结构 100% 等价，样式语义等价（格式允许归一）。
+9. **undo 与持久化节奏**：栈内存命令；`mtp.doc` 快照 1s 节流——别每次按键写 localStorage（大图会卡）。
+10. **主文件体积与同步**：编辑层全量增量进 `MermaidToPng.html`（单文件原则不破），完成后 `cp` 同步 `deploy/index.html`。
+
+以下 11–15 为实现期（2026-10-07）实测新坑：
+
+11. **mermaid v11 cluster 定位**：`g.cluster` 元素**没有 transform**，subgraph 的位置/尺寸在内部 `<rect>` 的 `x/y/width/height` 属性（绝对画布坐标）；节点 `g.node` 才是 `transform: translate(中心)` + 内部形状 getBBox。提取 layout 时两套读法不能混。
+12. **平行四边形序列化禁用内部引号**：mermaid 11.4.1 对 `id[/"文本"/]` 解析报 `got 'STR'`——serializer 必须输出 `id[/文本/]`（label 内 `"` 已转义为 `#quot;`，无引号冲突）。
+13. **scanShape 的 label 要逐字符构建**：closer 消费不进 label。整段 `slice(opener后, end)` 会把复合形状 `[(x)]` / `((x))` / `([x])` 的中间 closer（`)`/`]`）包进标签（实测得 `数据库)`）。opener 对应的 closer 要先依序压栈（栈初始为空会让所有形状识别直接失败）。
+14. **undo 快照防污染**：命令 revert 把 `old` 快照以引用赋回 doc 后，redo 的 apply（`patchStyle`/`ensureCanvasDoc`）会就地修改快照对象——反复 undo/redo 后快照损坏、深比较失败。revert 一律 `deepClone(old)` / `{...old.canvas}` 拷贝赋值。move/resize 的画布扩容纳入命令（apply 内 ensureCanvasDoc + revert 回退 canvas 尺寸），undo 才能完整还原 doc。
+15. **headless 验证**：`--virtual-time-budget` 下 `createImageBitmap` 永不回调（`img.onload` 会正常回调）——像素抽检走 `Image + createObjectURL`；结果标记串要运行时拼接防命中注入脚本源码字面量。回归脚本：`.tmp_verify/run_verify.py`（Pass A/B 双跑，Pass B 复用同一 `--user-data-dir` 验证 localStorage 恢复）。
+16. **headless 下触发真实下载会挂死整页**：Ctrl+Alt+S → saveMte → `a.click()` 下载，在 `--dump-dom` + 虚拟时间模式下 Chrome 永不返回（240s 超时）。测试必须 stub `HTMLAnchorElement.prototype.click` 记 flag 后还原。
+17. **合成事件派发要用实时 DOM 引用**：单节点 pointerup 后 `refreshNode` 会重建该节点 DOM——第二次 pointerdown/dblclick 派发在旧引用上不冒泡到 svg（detached）。真实浏览器无此问题（hit-test 拿当前元素），测试脚本必须每步重新 `querySelector`。
+18. **双击改文字失效根因**：stage 的 pointerdown 处理器对画布内所有 pointerdown `preventDefault`，文本浮层 textarea 因此无法聚焦（光标不出现）。修复 = mteText 内的 pointerdown 直接 return（浮层 textarea 再 stopPropagation 双保险）。**第二根因**：单节点 pointerup 后 `refreshNode` 重建该节点 DOM，浏览器派发 dblclick 时 hit-test 的元素已 detach，事件落在 stage 上、svg 收不到——moved=false 时 DOM 根本没动过，回弹 refreshNode 必须删除。
+19. **注入测试脚本整块不执行的征兆**：dump 里有 start 标记字符串但无 prog div = start 检查命中了**脚本源码字面量**（假阳性），真实原因是注入脚本自身 SyntaxError（如跨组 `const` 重复声明）整块不执行。改完断言先用 `node --check` 校验注入块。
+20. **空 classDef 是 mermaid 语法错误**：样式签名有值但无可输出键时（如只有 `bgOpacity=1`）必须跳过整组，否则生成裸 `classDef cN ` 行，mermaid 报 `got 'NEWLINE'`——且该错误要到下一次 parse（如刷新后 enter）才暴露。
+21. **`__mtpEdit.doc()` 返回深拷贝**：测试断言命令副作用时不能拿着早前 `doc()` 的节点/边引用读字段（永远读到旧值），必须每次 `doc()` 重新查询。
+22. **严格模式下给未声明变量赋值直接 ReferenceError 中断当前 handler**（如把 `this.x` 误写成裸 `x = null`）——症状是「赋值生效、后续语句全没跑」，失败断言与异常位置分离时优先怀疑这类笔误。
+23. **reimport/源码重解析的布局迁移**：新 parse 出的 doc 的 `layout.node` 恒为空——迁移条件必须是「新 doc 存在同名节点」然后**赋值**旧坐标；写成 `if (r.doc.layout.node[id])`（以新坐标存在为前提）会让手工布局在每次 reimport/源码编辑时静默清空、退回网格兜底。配套断言：reimport 后手工坐标（777,555）必须保留。
+24. **重写 serializer 样式段时逐键核对 kv 输出**（本轮漏过 `color` 行——parse 正确、serialize 静默丢样式，round-trip 深比较立刻暴露）。
+25. **向单文件 HTML 插入片段必须锚定唯一序列**：`find('</head>')` 会命中 mermaid 库字符串与 renderHTML 字符串里的字面量（共 3 处），误插进 JS 字符串会破坏语法导致全局对象全灭。favicon 用 `'</style>
+</head>'` 唯一序列锚定；插入后必须立刻 `node --check`。
+26. **flex column 滚动容器的 overflow:hidden 子项会被静默压缩**：`#editTab`（flex column + overflow-y:auto）里的 `#mtePanelRoot` 因自身 `overflow:hidden`（圆角裁剪）使 CSS「自动最小尺寸」归零，被压缩到容器可视高度——scrollHeight==clientHeight、滚动条根本不出现、展开的分组被裁掉（症状「编辑区展开后无法全部展示」）。修法 = 该子项加 `flex:none`（2026-10-08）。凡「容器明明有 overflow:auto 却滚不动」先查这个组合。
+
+### 9.9 验收清单（Zcode 交付门槛，全过才算完）
+
+> **验收结果（2026-10-07 首版 13/13；2026-10-08 五轮迭代后 134/134 全过）。** Chrome headless（`--headless=new --dump-dom` + 注入脚本）跑 134 条断言（Pass A 128 条：验收 1–11、13 + 第 14–19 组「Tab 唯一入口/双击与 Enter 保存/Ctrl+Alt+S/多选框选/批量命令/节点级不透明度（分组适用、改色不重置）/vivid 主题色/紧凑颜色组/连线点击式全锚点/边编辑三点（拖弯折·改端点·换节点·删边）/标注组件 round-trip/源码边端点可编辑/编辑栏滚动看全分组 + 预览页固定（滚轮=缩放、PageUp·PageDown 无操作）/favicon 新图标」；Pass B 6 条：验收 12 刷新恢复含手工布局），外加编辑模式截图目检。实现坑已回填 §9.8。
+
+| # | 项 | 断言 |
+|---|---|---|
+| 1 | 导入 flowchart（≥8 节点含 subgraph/classDef） | `__mtpEdit.importDoc` 后 `doc()` 节点/边数与源码一致，warnings 空 |
+| 2 | 进入编辑 | 画布切自绘层，节点坐标 = 导入时 layout 初值 |
+| 3 | 组件拖入 | `addNode('diamond',300,200)` → doc+画布出现新节点 |
+| 4 | 双击改文字 | `updateText(id,'用户登录')` → 画布即时刷新、栈长 +1 |
+| 5 | 字体/颜色/背景/边框 | `updateStyle(id,{color:'#f00',bg:'#EAF2FF',stroke:'#036',fontFamily:'serif'})` → 四项画布+doc 均变 |
+| 6 | 移动/缩放 | `move/resize` → layout 段更新；画布 transform 正确 |
+| 7 | 删除 | `del(id)` → 节点+关联边消失；undo 两者皆恢复 |
+| 8 | 撤销/重做 | 对 4–7 每类命令 undo/redo 往返，doc 深比较一致 |
+| 9 | **round-trip** | 任意编辑后 `serialize()` → 重新 `importDoc()` → doc 结构等价（样式语义等价） |
+| 10 | 源码双向同步 | 画布改文字 → Code 页 textarea 同步更新；textarea 手改 → 画布重绘；无死循环（origin 断言） |
+| 11 | 导出 | 编辑画布 `exportPNGBlob` 2× → PNG magic + 尺寸 = canvas×2 + 样式色值抽检 |
+| 12 | 保存/恢复 | `.mte` 落盘 → 刷新页面恢复编辑现场（含 layout） |
+| 13 | 旧功能回归 | `__mtp` 现有钩子（render/exportBlob/detect/setZoom/fit/state）全过；MCP 桥 `mtp_render` 不受影响 |
+
+### 9.10 Roadmap（阶段 2+，接口已预留）
+
+- Edge 编辑 UI（拖端点连线、改箭头/标签/线色）——模型/命令/Validator MVP 已含
+- 多选、框选、对齐、网格吸附、小地图、复制粘贴
+- subgraph 组编辑（拖组带成员）
+- 「自动重排」按钮：一键丢掉手工 layout，回 mermaid dagre 布局
+- sequence / class 图（新 diagramType + 新 Parser/Serializer 分支，Editor Core 不动）
+- MCP 工具 `mtp_edit`（Agent 直接改图，走 `__mtpEdit` 同一内核）
+
+## 10. 参考资料
 
 - Mermaid 语法文档（Flowchart 等）：https://mermaid.ai/open-source/syntax/flowchart.html
 - mermaid 官方仓库：https://github.com/mermaid-js/mermaid
 - foreignObject（HTML 导出原理）：https://developer.mozilla.org/docs/Web/SVG/Element/foreignObject
 
-## 10. 维护
+## 11. 维护
 
 - 修改主文件后同步部署副本：`cp MermaidToPng.html deploy/index.html`。
+- 网页图标：内联于 `<head>` 的 base64 data URL（`favicon.ico`，5.3KB，源自 `D:\Users\lt\Pictures\ICO\favicon.ico`）；换图标 = 重新 base64 后替换 `<link rel="icon" ...>` 的 href。
 - 升级 mermaid：`python fetch_mermaid.py` 拉新版 `mermaid.min.js`，然后将新库内联进主文件（替换第一个 `<script>...</script>` 内联块）。
 - 自动化验证：页面暴露 `window.__mtp` 钩子，可用 agent-browser（eval -b base64 避免转义）跑渲染/导出断言。
+- 编辑层（§9）：`window.__mtpEdit` 钩子（enter/exit/doc/exec/addNode/select/updateText/updateStyle/move/resize/del/undo/redo/serialize/importDoc/saveMte/restoreMte/state）；无头回归脚本 `.tmp_verify/run_verify.py`（Chrome headless 注入，§9.8-15）。
 - Agent 接口层（§8）：桥与页面工具的注册、自测、排障见 `agent/README.md`。`__mtpAgent` 内核与 `__mtp` 一样只增不改签名。
 - 线上站点：`http://www.jjmermaid.xin` 部署 `deploy/` 目录内容；改主文件后部署副本一并更新。

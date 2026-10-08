@@ -2540,8 +2540,128 @@ globalThis.mermaid = globalThis.__esbuild_esm_mermaid.default;
   .ap-row input[type=number]::-webkit-inner-spin-button{opacity:1}
   .ap-row input[type=checkbox]{accent-color:var(--accent-a);width:15px;height:15px;cursor:pointer}
 
+  /* ── 编辑层 v3（§9）：左栏双 Tab / accordion 编辑栏 / 自绘画布 / 文本浮层 ──
+     分组标题色 = 背景图突出色（--vivid），编辑栏其余文字 = 主色（--dominant）；
+     无背景图时回退下面的默认值（applyAppearance 有图时会内联覆盖）。 */
+  :root{--vivid:#8b5cf6;--aux:#8b93a7;--dominant:#e6e9f2}
+  .mte-tabs{display:flex;gap:4px;margin-left:4px}
+  .mte-tab{padding:3px 11px;font-size:12px;border-radius:7px;border:1px solid transparent;
+    background:transparent;color:var(--dominant);cursor:pointer;letter-spacing:0;
+    transition:background .15s,color .15s,border-color .15s}
+  .mte-tab:hover{background:rgba(255,255,255,.07);color:var(--fg)}
+  .mte-tab.active{background:color-mix(in srgb, var(--vivid) 20%, transparent);
+    color:var(--vivid);border-color:color-mix(in srgb, var(--vivid) 50%, transparent);font-weight:600}
+  #codeWrap{display:flex;flex-direction:column;flex:1;min-height:0}
+  .pane[data-tab=edit] #codeWrap{display:none}
+  .pane[data-tab=code] #editTab{display:none}
+  .pane[data-tab=edit] .code-only{display:none}
+  #editTab{display:flex;flex-direction:column;flex:1;min-height:0;overflow-y:auto;padding:10px}
+  #mteWarnings{display:none;margin:0 0 8px;padding:6px 9px;font-size:11.5px;line-height:1.55;
+    color:#fbbf24;background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.35);
+    border-radius:8px;white-space:pre-wrap;max-height:130px;overflow:auto}
+  /* accordion 风格分组（参考 CodePen accordion）：突出色标题条 + item 分隔线 + 展开高亮 */
+  #mtePanelRoot{border:1px solid var(--panel-border);border-radius:12px;overflow:hidden;flex:none;
+    background:rgba(255,255,255,.02)}
+  .eg{border-bottom:1px solid var(--panel-border);background:transparent}
+  .eg:last-child{border-bottom:none}
+  .eg-h{display:flex;align-items:center;gap:8px;padding:9px 12px;cursor:pointer;
+    font-size:12.5px;font-weight:700;letter-spacing:3px;color:var(--vivid);user-select:none;
+    border-left:3px solid var(--vivid);background:transparent;
+    transition:background .2s,border-color .2s,filter .2s}
+  .eg-h:hover,.eg.open .eg-h{background:color-mix(in srgb, var(--vivid) 13%, transparent)}
+  .eg.open .eg-h{border-left-color:var(--accent-b)}
+  .eg-h::after{content:'▾';margin-left:auto;color:var(--vivid);transition:transform .25s;
+    font-size:11px;letter-spacing:0}
+  .eg.open .eg-h::after{transform:rotate(180deg)}
+  .eg-b{display:none;padding:10px 12px 12px;background:rgba(0,0,0,.20)}
+  .eg.open .eg-b{display:block}
+  .eg.disabled{opacity:.38}
+  .eg.disabled .eg-b{pointer-events:none}
+  /* 组件卡片网格（拖进画布） */
+  .comp-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:2px}
+  .comp-card{display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 2px 6px;
+    border:1px solid var(--panel-border);border-radius:9px;cursor:grab;
+    background:rgba(255,255,255,.03);user-select:none;-webkit-user-select:none;touch-action:none;
+    transition:border-color .15s, background .15s, transform .12s}
+  .comp-card:hover{border-color:var(--vivid);
+    background:color-mix(in srgb, var(--vivid) 14%, transparent);transform:translateY(-1px)}
+  .comp-card:active{cursor:grabbing}
+  .comp-card svg{width:40px;height:26px;display:block}
+  .comp-card span{font-size:11px;color:var(--dominant)}
+  /* 控件行 */
+  .eg-row{display:flex;align-items:center;gap:6px;margin-top:8px;font-size:12px;color:var(--dominant)}
+  .eg-row>label:first-child{min-width:70px;flex:none}
+  #editTab input[type=number]{background:rgba(255,255,255,.05);color:var(--fg);
+    border:1px solid var(--panel-border);border-radius:7px;padding:4px 6px;font:inherit;font-size:12px}
+  #editTab input[type=number]:focus{outline:none;border-color:var(--vivid)}
+  #editTab input[type=text]{flex:1;min-width:0;background:rgba(255,255,255,.05);color:var(--fg);
+    border:1px solid var(--panel-border);border-radius:7px;padding:4px 6px;font:inherit;font-size:12px}
+  #editTab input[type=text]:focus{outline:none;border-color:var(--vivid)}
+  .eg-row input[type=number],.eg-row select{flex:1;min-width:0;background:rgba(255,255,255,.05);
+    color:var(--fg);border:1px solid var(--panel-border);border-radius:7px;padding:4px 6px;
+    font:inherit;font-size:12px}
+  .eg-row select option{background:#141927}
+  .eg-row input[type=checkbox]{accent-color:var(--vivid);width:15px;height:15px;cursor:pointer}
+  /* 左右滑块开关（虚线 / 透明底）：与深色主题按钮同风格，checked = 霓虹紫 */
+  .mte-switch{position:relative;display:inline-block;width:34px;height:18px;flex:none;vertical-align:middle}
+  .mte-switch input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer;z-index:1}
+  .mte-switch .tk{position:absolute;inset:0;border-radius:999px;background:rgba(255,255,255,.13);
+    border:1px solid var(--panel-border);transition:background .18s,border-color .18s}
+  .mte-switch .tk::after{content:'';position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;
+    background:#aab4c8;transition:transform .18s,background .18s;box-shadow:0 1px 3px rgba(0,0,0,.45)}
+  .mte-switch input:checked + .tk{background:color-mix(in srgb, var(--accent-a) 45%, transparent);
+    border-color:var(--accent-a)}
+  .mte-switch input:checked + .tk::after{transform:translateX(16px);background:#ffffff}
+  /* 颜色组：紧凑行式——一个子项一行一个色块，点击色块唤起取色器 */
+  .eg-colors{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+  .eg-color-slot{display:flex;align-items:center;gap:6px}
+  .eg-color-slot .swatch-label{font-size:12px;color:var(--dominant);min-width:58px;flex:none}
+  .swatch-cur{position:relative;flex:1;height:26px;border-radius:8px;border:1px solid rgba(255,255,255,.16);
+    box-shadow:0 2px 10px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.15);cursor:pointer;overflow:hidden;
+    transition:filter .15s}
+  .swatch-cur:hover{filter:brightness(1.15)}
+  .swatch-cur input[type=color]{position:absolute;inset:-4px;width:calc(100% + 8px);
+    height:calc(100% + 8px);opacity:0;cursor:pointer;border:none;padding:0}
+  .swatch-cur .swatch-hex{position:absolute;right:8px;top:50%;transform:translateY(-50%);
+    font-family:var(--mono);font-size:10.5px;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.8);
+    pointer-events:none;background:rgba(0,0,0,.35);padding:1px 6px;border-radius:5px}
+  .seg{display:flex;gap:3px;flex:1}
+  .seg button{flex:1;padding:3px 0;font-size:12px;border-radius:6px;min-width:0}
+  .seg button.on{background:color-mix(in srgb, var(--vivid) 26%, transparent);
+    border-color:var(--vivid);color:var(--fg)}
+  .mte-toggle{width:auto}
+  /* header 编辑工具按钮组（进出编辑经「编辑」Tab） */
+  #mteEditBtns{display:none;gap:6px}
+  body.edit-mode #mteEditBtns{display:inline-flex}
+  /* 自绘画布 */
+  #mteCanvas{display:block;touch-action:none}
+  #mteCanvas.linking{cursor:crosshair}
+  #mteCanvas .mte-node{cursor:move}
+  #mteCanvas.linking .mte-node{cursor:crosshair}
+  #mteCanvas text{user-select:none;-webkit-user-select:none;pointer-events:none}
+  /* 标注组件：纯文字也必须可点选（覆盖全局 text 禁命中），且点选优先级最高 */
+  #mteCanvas .mte-label text{pointer-events:all;cursor:move}
+  #mteCanvas .mte-selbox{fill:none;stroke:var(--accent-b);stroke-width:1.4;stroke-dasharray:5 4;pointer-events:none}
+  #mteCanvas .mte-marquee{fill:rgba(6,182,212,.10);stroke:var(--accent-b);stroke-width:1.2;
+    stroke-dasharray:5 4;pointer-events:none}
+  #mteCanvas .mte-handle{fill:#ffffff;stroke:var(--accent-a);stroke-width:1.2}
+  #mteCanvas .mte-anchor{fill:#ffffff;stroke:var(--accent-b);stroke-width:1.2}
+  /* 边编辑三点：首/尾方块（点击改端点）、中点圆（拖动弯折） */
+  #mteCanvas .mte-endpt{fill:#ffffff;stroke:var(--accent-a);stroke-width:1.4;rx:1.5}
+  #mteCanvas .mte-mid{fill:rgba(124,58,237,.85);stroke:#ffffff;stroke-width:1.6}
+  #mteCanvas g.mte-edge{cursor:pointer}
+  body.edit-mode #stage{cursor:default}
+  body.edit-mode #stage.grabbing{cursor:grabbing}
+  /* 画布内文本编辑浮层 */
+  #mteText{position:absolute;z-index:30;display:none;min-width:60px}
+  #mteText textarea{
+    flex:none;width:100%;height:100%;resize:none;outline:none;overflow:hidden;
+    border:1.5px dashed var(--accent-b);border-radius:4px;background:transparent;
+    padding:3px 6px;text-align:center;line-height:1.3;box-sizing:border-box}
+
   /* 分割条 */
   #split{cursor:col-resize;background:transparent;transition:background .15s}
+
   #split:hover{background:rgba(124,58,237,.35)}
 
   @media (max-width:860px){
@@ -2550,12 +2670,20 @@ globalThis.mermaid = globalThis.__esbuild_esm_mermaid.default;
     #split:hover{background:rgba(6,182,212,.35)}
   }
 </style>
+  <link rel="icon" type="image/x-icon" href="data:image/x-icon;base64,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">
 </head>
 <body>
 
 <header>
   <div class="logo">MermaidToPng</div>
   <div class="spacer"></div>
+  <span id="mteEditBtns">
+    <button id="btnUndo" title="撤销 (Ctrl+Z)">↶ 撤销</button>
+    <button id="btnRedo" title="重做 (Ctrl+Y)">↷ 重做</button>
+    <button id="btnImportMte" title="导入 .mte 编辑文档（源码+手工布局）">导入</button>
+    <button id="btnSaveMte" title="保存 .mte 编辑文档 (Ctrl+Alt+S)">保存</button>
+    <input type="file" id="mteFile" accept=".mte,application/json" style="display:none">
+  </span>
   <button id="btnAgent" title="Agent 桥：MCP 工具经本地 mtp-mcp 长轮询进本页执行">Agent</button>
   <button id="btnAppearance" title="外观设置 v6（若颜色行为异常，请 Ctrl+F5 强制刷新加载新版）">外观</button>
 </header>
@@ -2604,26 +2732,36 @@ globalThis.mermaid = globalThis.__esbuild_esm_mermaid.default;
 </div>
 
 <main>
-  <!-- 左：Code 页 -->
-  <section class="pane left">
+  <!-- 左：Code 页（data-tab 初始为 code：编辑栏内容只在「编辑」Tab 显示） -->
+  <section class="pane left" data-tab="code">
     <div class="card">
       <div class="card-h">
         <span class="tag">CODE</span>
-        <select id="modeSel" title="语法模式：自动检测 / Mermaid / SVG / HTML">
+        <span class="mte-tabs" id="paneTabs" title="源码 = 代码编辑；编辑 = 所见即所得编辑栏">
+          <button class="mte-tab active" data-tab="code">源码</button>
+          <button class="mte-tab" data-tab="edit">编辑</button>
+        </span>
+        <select id="modeSel" class="code-only" title="语法模式：自动检测 / Mermaid / SVG / HTML">
           <option value="auto" selected>自动检测</option>
           <option value="mermaid">Mermaid</option>
           <option value="svg">SVG</option>
           <option value="html">HTML</option>
         </select>
-        <span class="dim">Ctrl+Enter 立即渲染 · 自动保存本地</span>
+        <span class="dim code-only">Ctrl+Enter 立即渲染 · 自动保存本地</span>
         <span class="spacer"></span>
-        <button id="btnExample" title="插入示例流程图">示例</button>
-        <button id="btnCopy"   title="复制代码">复制</button>
-        <button id="btnClear"  title="清空代码">清空</button>
+        <button id="btnExample" class="code-only" title="插入示例流程图">示例</button>
+        <button id="btnCopy"   class="code-only" title="复制代码">复制</button>
+        <button id="btnClear"  class="code-only" title="清空代码">清空</button>
       </div>
-      <textarea id="code" spellcheck="false"
-        placeholder="在此粘贴 Mermaid / SVG / HTML 代码（自动识别），例如：&#10;graph TD&#10;  A[开始] --> B[结束]"></textarea>
-      <div id="err"></div>
+      <div id="codeWrap">
+        <textarea id="code" spellcheck="false"
+          placeholder="在此粘贴 Mermaid / SVG / HTML 代码（自动识别），例如：&#10;graph TD&#10;  A[开始] --> B[结束]"></textarea>
+        <div id="err"></div>
+      </div>
+      <div id="editTab">
+        <div id="mteWarnings"></div>
+        <div id="mtePanelRoot"></div>
+      </div>
     </div>
   </section>
 
@@ -2649,13 +2787,14 @@ globalThis.mermaid = globalThis.__esbuild_esm_mermaid.default;
           <input type="color" id="pngBg" value="#ffffff">
         </label>
         <label class="chk" title="PNG 使用透明背景（忽略底色）">
-          <input type="checkbox" id="pngTransparent">透明底
+          <span class="mte-switch"><input type="checkbox" id="pngTransparent"><span class="tk"></span></span>透明底
         </label>
         <button id="btnPNG" class="primary" title="导出 PNG（浏览器将弹出保存位置对话框）">⬇ 下载 PNG</button>
       </div>
       <div id="stage">
         <div id="viewport"></div>
-        <div id="hint">左侧粘贴 Mermaid / SVG / HTML 代码开始 · 滚轮缩放 / 拖拽移动 / 双击适应</div>
+        <div id="hint">左侧粘贴 Mermaid / SVG / HTML 代码开始 · 滚轮缩放 / 拖拽移动</div>
+        <div id="mteText"><textarea spellcheck="false" aria-label="节点文本编辑"></textarea></div>
       </div>
     </div>
   </section>
@@ -2837,6 +2976,8 @@ function tolerantMermaid(src) {
    统一入口：按语法模式分派。三个分支成功后都保证
    state.lastRawSvg（导出数据源）与 state.vbW/vbH（自然尺寸）就位。 */
 async function renderDiagram(raw) {
+  if (window.Editor && Editor.active)           // 编辑画布进行中：外部触发（Agent/快捷键等）不得摧毁交互层
+    return { ok: false, error: '编辑模式进行中，请先退出编辑' };
   const src = String(raw ?? codeEl.value ?? '').trim();
   state.error = '';
   if (!src) {
@@ -3069,12 +3210,14 @@ function fitSoon() { clearTimeout(fitTimer); fitTimer = setTimeout(fitView, 30);
 stage.addEventListener('wheel', e => {
   if (!state.lastRawSvg) return;
   e.preventDefault();
+  /* 编辑模式滚轮不再翻页（预览页固定不动），统一缩放；编辑栏的上下滚动由 #editTab 自身 overflow 承担 */
   const r = stage.getBoundingClientRect();
   zoomAt(e.clientX - r.left, e.clientY - r.top, e.deltaY < 0 ? 1.12 : 1 / 1.12);
 }, { passive: false });
 
 stage.addEventListener('pointerdown', e => {
   if (e.button !== 0 || !state.lastRawSvg) return;
+  if ($('mteText').contains(e.target)) return;   // 文本编辑浮层内：交给 textarea（preventDefault 会禁掉聚焦与光标）
   e.preventDefault();                       // 阻止拖动触发原生文本选择，避免拖图变成选字
   state.dragging = { x: e.clientX, y: e.clientY, tx: state.tx, ty: state.ty };
   stage.setPointerCapture(e.pointerId);
@@ -3088,7 +3231,8 @@ stage.addEventListener('pointermove', e => {
 });
 ['pointerup', 'pointercancel'].forEach(ev =>
   stage.addEventListener(ev, () => { state.dragging = null; stage.classList.remove('grabbing'); }));
-stage.addEventListener('dblclick', fitView);
+/* 双击适应画布已按需求移除（2026-10-08）：双击在编辑模式承担改文字，空白处双击不再触发适应；
+   适应请用右上「适应」/「1:1」按钮 */
 
 /* ================= PNG 导出 =================
    SVG → data:URL → <img> → canvas(倍率缩放) → toBlob → a[download]。
@@ -3101,6 +3245,7 @@ function svgImgSrc(svgText) {
   return { url: URL.createObjectURL(new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' })), blob: true };
 }
 async function exportPNGBlob(mult = 2, transparent = false, bgColor = '#ffffff') {
+  if (window.Editor && Editor.active) Editor.canvas.syncExport();   // 编辑画布：导出前同步最新交互层状态
   if (!state.lastRawSvg) throw new Error('没有可导出的内容：请先渲染成功的 Mermaid / SVG / HTML 代码');
   // Canvas 上限保护（Chrome）：单边 16384 / 总像素约 2^28，超限自动降倍率而不是导出空白
   let m = Math.max(1, Math.round(mult) || 1);
@@ -3150,7 +3295,7 @@ function syncStageBg() {
 const bgLayer = $('bgLayer'), bgImg = $('bgImg'), bgMask = $('bgMask'),
       apPanel = $('appearancePanel');
 
-const APPEAR_DEFAULT = { fit: 'cover', zoom: 100, blur: 0, mask: 35, flip: false, dataUrl: null, vivid: null, aux: null };
+const APPEAR_DEFAULT = { fit: 'cover', zoom: 100, blur: 0, mask: 35, flip: false, dataUrl: null, vivid: null, aux: null, dominant: null };
 let appearance = Object.assign({}, APPEAR_DEFAULT);
 let apSaveTimer = null;
 
@@ -3166,6 +3311,7 @@ function applyAppearance() {
     bgImg.removeAttribute('src');
     document.documentElement.style.removeProperty('--vivid');
     document.documentElement.style.removeProperty('--aux');
+    document.documentElement.style.removeProperty('--dominant');
     return;
   }
   if (bgImg.getAttribute('src') !== appearance.dataUrl) bgImg.src = appearance.dataUrl;
@@ -3174,14 +3320,16 @@ function applyAppearance() {
   bgImg.style.transform = (appearance.flip ? 'scaleX(-1) ' : '') + 'scale(' + (appearance.zoom / 100) + ')';
   bgLayer.style.filter = appearance.blur > 0 ? 'blur(' + appearance.blur + 'px)' : 'none';
   bgMask.style.opacity = String(appearance.mask / 100);
-  if (appearance.vivid && appearance.aux) {
+  if (appearance.vivid && appearance.aux && appearance.dominant) {
     document.documentElement.style.setProperty('--vivid', appearance.vivid);
     document.documentElement.style.setProperty('--aux', appearance.aux);
+    document.documentElement.style.setProperty('--dominant', appearance.dominant);
   } else {
     extractPalette(appearance.dataUrl).then(p => {
-      appearance.vivid = p.vivid; appearance.aux = p.aux;
+      appearance.vivid = p.vivid; appearance.aux = p.aux; appearance.dominant = p.dominant;
       document.documentElement.style.setProperty('--vivid', p.vivid);
       document.documentElement.style.setProperty('--aux', p.aux);
+      document.documentElement.style.setProperty('--dominant', p.dominant);
       scheduleAppearanceSave();
     }).catch(() => {});
   }
@@ -3287,7 +3435,10 @@ function extractPalette(dataUrl) {
           const [h, s] = hslOf(bd);
           aux = hslToRgbStr(h, Math.min(s, 0.35), 0.72);
         }
-        resolve({ vivid, aux });
+        // 主色：加权最高桶（过暗提亮）→ 编辑栏正文文字色（--dominant）
+        const [dh, ds, dl] = hslOf(bd);
+        const dominant = hslToRgbStr(dh, ds, lite(dl));
+        resolve({ vivid, aux, dominant });
       } catch (e) { reject(e); }
     };
     img.onerror = () => reject(new Error('图片加载失败'));
@@ -3344,6 +3495,10 @@ $('apFlip').onchange = e => { appearance.flip = !!e.target.checked; applyAppeara
 let debounce = null;
 codeEl.addEventListener('input', () => {
   localStorage.setItem('mtp.code', codeEl.value);
+  if (window.Editor && Editor.active) {         // 编辑模式：源码手改 → 重解析回画布（§9.1 双向同步）
+    Editor.sync.onUserCodeInput();
+    return;
+  }
   clearTimeout(debounce);
   debounce = setTimeout(() => renderDiagram(), 400);
 });
@@ -3719,7 +3874,2427 @@ window.__mtpAgentBridge = (function () {
   }
 })();
 
-/* ================= 启动 ================= */
+/* ================= 编辑层 v3（ARCHITECTURE §9 实现合同） =================
+   D1：Mermaid 源码只是 I/O 格式，编辑状态 = MteDoc（唯一编辑状态）。
+   D2：编辑画布 = 自绘 SVG 交互层；预览模式照旧 mermaid 自动布局渲染。
+   D3：位置/大小存 doc.layout 不回写源码；样式经 Serializer 回写 classDef/class。
+   修改方向恒为：画布交互 → Command → Model →（Serializer→源码 & 画布刷新）；
+   UI 禁止直改 Model、禁止直拼源码。扩展点：Editor.registry.register()。 */
+window.Editor = (function () {
+  const NS = 'http://www.w3.org/2000/svg';
+  const idle = window.requestIdleCallback || (fn => setTimeout(fn, 200));
+  const escXml = s => String(s ?? '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+  const deepClone = o => JSON.parse(JSON.stringify(o));
+  const svgEl = (tag, attrs = {}) => {
+    const e = document.createElementNS(NS, tag);
+    for (const k in attrs) if (attrs[k] != null) e.setAttribute(k, attrs[k]);
+    return e;
+  };
+
+  /* 编辑画布默认配色（全部内联进 SVG，禁止 CSS 变量——导出 data:URL 无样式表） */
+  const THEME = {
+    nodeBg: '#263048', nodeStroke: '#7e8db5', nodeColor: '#e6e9f2', nodeStrokeW: 1.5,
+    groupBg: 'rgba(124,58,237,.10)', groupStroke: '#8b5cf6',
+    edge: '#94a3b8', edgeLabel: '#aab4c8', edgeLabelSize: 12,
+    sel: '#06b6d4',
+  };
+
+  /* ---------- 9.4 Editor.model：MteDoc 结构 / 默认值 / id / 迁移 ---------- */
+  const model = {
+    SCHEMA_VERSION: '1.0',
+    createDoc() {
+      return {
+        schemaVersion: '1.0',
+        diagramType: 'flowchart',
+        nodes: [], edges: [],
+        layout: { canvas: { w: 800, h: 600 }, node: {}, edge: {} },
+        meta: { extensions: { rawLines: [], initLines: [] } },
+      };
+    },
+    cloneDoc: doc => deepClone(doc),
+    genId(doc, prefix = 'n') {
+      const ids = new Set(doc.nodes.map(n => n.id));
+      let i = 1;
+      while (ids.has(prefix + i)) i++;
+      return prefix + i;
+    },
+    nodeOf: (doc, id) => doc.nodes.find(n => n.id === id),
+    edgesOf: (doc, id) => doc.edges.filter(e => e.from === id || e.to === id),
+    /* schemaVersion 迁移入口：1.0 直通；未来版本在此按 fromVersion 挂迁移函数 */
+    migrate(raw) {
+      if (!raw || typeof raw !== 'object' || !Array.isArray(raw.nodes)) return null;
+      if (raw.schemaVersion !== model.SCHEMA_VERSION) return null;
+      return raw;
+    },
+  };
+
+  /* ---------- 9.4 Editor.parser：自研行级解析（白名单），mermaid.parse 只做语法预检 ----------
+     白名单（§9.8-2）：节点形状 id[...]/(...)/{...}/([..])/[(..)]/((..))/[/../]、链式 A-->B-->C、
+     A & B --> C、-->|lbl| / -- lbl --> / --- / -.-> / -. lbl .-> / ==> / == lbl ==>、
+     subgraph id[title]…end（可嵌套）、classDef/class/style、%%注释 与 %%{init}%%。
+     未覆盖语法原样存 meta.extensions.rawLines 并进 warnings（诚实降级，不静默吞）。 */
+  /* id 字符集不含 '-'：与边运算符 -- / -. 歧义太大；含 '-' 的 id 会被诚实降级进 rawLines */
+  const ID_RE = /^[A-Za-z0-9_\u4e00-\u9fff\u3040-\u30ff]+/;
+  const isIdCh = c => /[A-Za-z0-9_\u4e00-\u9fff\u3040-\u30ff]/.test(c);
+  const isFlowHead = t => /^(flowchart|graph)\b/i.test(t);
+  const FLOW_ONLY_MSG = '仅支持 Mermaid 流程图（flowchart / graph），其它图型请用预览模式';
+
+  function unescapeLabel(s) {
+    return String(s ?? '')
+      .replace(/#quot;/g, '"')
+      .replace(/<br\s*\/?\s*>/gi, '\n');
+  }
+  function escLabel(s) {          // 源码侧：引号内容转义 + 换行 → <br/>
+    return String(s ?? '').replace(/"/g, '#quot;').replace(/\n/g, '<br/>');
+  }
+  /* 引号串 → 等长 \x01 占位（边切分只在「引号外」进行） */
+  function maskQuotes(line) {
+    let out = '', i = 0;
+    const n = line.length;
+    while (i < n) {
+      if (line[i] === '"') {
+        let j = i + 1;
+        while (j < n && line[j] !== '"') { if (line[j] === '\\') j++; j++; }
+        out += '"' + '\x01'.repeat(Math.max(0, j - i - 1)) + '"';
+        i = j + 1;
+        continue;
+      }
+      out += line[i]; i++;
+    }
+    return out;
+  }
+  /* 括号配对必须用栈（v1 教训②：复合形状 ([..]) 后开先闭，单一 closeCh 扫不到 end）。
+     opener 自身在调用方已被消费（openLen 跳过）→ 这里先把它对应的 closer 依序压栈。
+     label 逐字符构建：closer 消费不进 label（否则 [(x)] 的 ')' 会被包进标签）。 */
+  function scanShape(line, start, openLen, type) {
+    const pairs = { '[': ']', '(': ')', '{': '}' };
+    const stack = [];
+    let label = '';
+    for (let k = 0; k < openLen; k++) {
+      const cl = pairs[line[start + k]];
+      if (cl) stack.push(cl);
+    }
+    for (let i = start + openLen; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"') {                                   // 引号串整体进 label（含引号，后面剥裹）
+        let j = i + 1;
+        while (j < line.length && line[j] !== '"') { if (line[j] === '\\') j++; j++; }
+        label += line.slice(i, Math.min(j + 1, line.length));
+        i = j;
+        continue;
+      }
+      if (pairs[c]) { stack.push(pairs[c]); label += c; }
+      else if (stack.length && c === stack[stack.length - 1]) stack.pop();
+      else if (!stack.length) return null;               // 未配对就出现杂字符 → 不是形状
+      else label += c;
+      if (!stack.length) {                               // 栈空即整体闭合（closer 不进 label）
+        label = label.trim();
+        if (type === 'parallelogram') label = label.replace(/^\/+|\/+$/g, '');
+        if (label.startsWith('"') && label.endsWith('"') && label.length >= 2)
+          label = label.slice(1, -1);
+        return { type, label: unescapeLabel(label), end: i };
+      }
+    }
+    return null;
+  }
+  function tryShape(line, j) {
+    const two = line.slice(j, j + 2);
+    if (two === '[(') return scanShape(line, j, 2, 'cylinder');
+    if (two === '((') return scanShape(line, j, 2, 'circle');
+    if (two === '([') return scanShape(line, j, 2, 'stadium');
+    if (two === '[[') return scanShape(line, j, 2, 'rect');          // [[子程序]] → rect
+    if (two === '[/') return scanShape(line, j, 2, 'parallelogram');
+    const c = line[j];
+    if (c === '[') return scanShape(line, j, 1, 'rect');
+    if (c === '(') return scanShape(line, j, 1, 'round');
+    if (c === '{') return scanShape(line, j, 1, 'diamond');
+    return null;
+  }
+  /* 引号串 → 去掉引号保留内部文本（管道/夹心 label 可直接从骨架取回真实文本）；
+     形状 id+… → \x00K\x00 占位（裸 id 不动）。 */
+  function extractShapes(line) {
+    const tokens = [];
+    let out = '', i = 0;
+    const n = line.length;
+    while (i < n) {
+      const c = line[i];
+      if (c === '"') {
+        let j = i + 1;
+        while (j < n && line[j] !== '"') { if (line[j] === '\\') j++; j++; }
+        out += line.slice(i + 1, j);          // 剥引号保文本
+        i = j + 1;
+        continue;
+      }
+      const prevOk = i === 0 || !isIdCh(line[i - 1]);
+      const m = ID_RE.exec(line.slice(i));
+      if (prevOk && m) {
+        const id = m[0];
+        let j = i + id.length;
+        while (j < n && line[j] === ' ') j++;
+        const sh = tryShape(line, j);
+        if (sh) {
+          tokens.push({ id, type: sh.type, label: sh.label });
+          out += '\x00' + (tokens.length - 1) + '\x00';
+          i = sh.end + 1;
+          continue;
+        }
+        out += id;
+        i += id.length;
+        continue;
+      }
+      out += c; i++;
+    }
+    return { masked: out, tokens };
+  }
+  /* 边运算符（anchored 依优先级；长模式优先防误切） */
+  const EDGE_PATTERNS = [
+    { re: /^-\.\s*(.*?)\s*\.-+->/, kind: 'dotted', lg: 1 },   // -. lbl .->
+    { re: /^-\.+-?>/, kind: 'dotted' },                        // -.-> / -..->
+    { re: /^-\.-/, kind: 'dotted' },                           // -.-（无箭头虚线）
+    { re: /^--\s*(.*?)\s*-{2,}>/, kind: 'arrow', lg: 1 },      // -- lbl -->
+    { re: /^-{2,}>/, kind: 'arrow' },                          // --> / --->
+    { re: /^==\s*(.*?)\s*={2,}>/, kind: 'thick', lg: 1 },      // == lbl ==>
+    { re: /^={2,}>/, kind: 'thick' },                          // ==>
+    { re: /^-{3,}/, kind: 'line' },                            // ---
+  ];
+  function scanEdge(mask, from) {
+    for (let i = from; i < mask.length; i++) {
+      if (/\s/.test(mask[i])) continue;
+      for (const p of EDGE_PATTERNS) {
+        const m = p.re.exec(mask.slice(i));
+        if (!m) continue;
+        let label = null;
+        if (p.lg != null && m[p.lg] && m[p.lg].trim()) {
+          const li = m[0].indexOf(m[p.lg]);
+          label = unescapeLabel(m[p.lg].trim());
+        }
+        return { index: i, kind: p.kind, label, end: i + m[0].length };
+      }
+      /* 此字符是节点 id / 占位符 / & 等，不是边符起点 → 继续向后找 */
+    }
+    return null;
+  }
+  function pipeLabel(mask, from) {           // -->|lbl| 尾管道
+    const m = /^\s*\|([^|]*)\|/.exec(mask.slice(from));
+    if (!m) return { label: null, end: from };
+    return { label: unescapeLabel(m[1].trim()), end: from + m[0].length };
+  }
+  const ID_EXACT = new RegExp('^' + ID_RE.source + '$');   // 整段必须是合法 id（防整行误判）
+  function nodeSegIds(seg, tokens, warnings, lineno) {
+    // 段 → [{id, type, label}]（& 拆分；\x00K\x00 占位还原带形状信息）
+    const list = [];
+    for (const piece of seg.split('&')) {
+      const t = piece.trim();
+      if (!t) continue;
+      const ph = /^\x00(\d+)\x00$/.exec(t);
+      if (ph) {
+        const tk = tokens[+ph[1]];
+        list.push({ id: tk.id, type: tk.type, label: tk.label });
+      } else if (ID_EXACT.test(t)) list.push({ id: t, type: null, label: null });
+      else warnings.push(`第 ${lineno} 行：无法识别的节点引用「${t.slice(0, 24)}」`);
+    }
+    return list;
+  }
+  /* ---------- 样式键映射（classDef/class/style → node.style，物化进节点） ---------- */
+  function parseStyleKV(s) {
+    const parts = [];
+    let depth = 0, inQ = false, cur = '';
+    for (const c of s) {
+      if (c === '"') { inQ = !inQ; cur += c; continue; }
+      if (!inQ) {
+        if (c === '(') depth++;
+        else if (c === ')') depth--;
+        else if (c === ',' && depth === 0) { parts.push(cur); cur = ''; continue; }
+      }
+      cur += c;
+    }
+    if (cur.trim()) parts.push(cur);
+    const style = {}, extra = {};
+    for (const p of parts) {
+      const ci = p.indexOf(':');
+      if (ci === -1) continue;
+      const k = p.slice(0, ci).trim().toLowerCase();
+      const v = p.slice(ci + 1).trim();
+      if (!k || !v) continue;
+      const num = parseFloat(v);
+      switch (k) {
+        case 'fill': style.bg = v; break;
+        case 'color': style.color = v; break;
+        case 'stroke': style.stroke = v; break;
+        case 'stroke-width': if (!isNaN(num)) style.strokeWidth = num; else extra[k] = v; break;
+        case 'stroke-dasharray': style.dashed = !/^(none|0)/i.test(v); break;
+        case 'rx': if (!isNaN(num)) style.radius = num; else extra[k] = v; break;
+        case 'fill-opacity': if (!isNaN(num)) style.bgOpacity = clamp(num, 0.05, 1); else extra[k] = v; break;
+        case 'font-family': style.fontFamily = v.replace(/^['"]|['"]$/g, ''); break;
+        case 'font-size': if (!isNaN(num)) style.fontSize = num; else extra[k] = v; break;
+        case 'font-weight': if (/^(bold|[6-9]\d{2})$/i.test(v)) style.bold = true; else extra[k] = v; break;
+        case 'font-style': if (/^italic$/i.test(v)) style.italic = true; else extra[k] = v; break;
+        case 'text-align': if (/^(left|center|right)$/i.test(v)) style.align = v.toLowerCase(); break;
+        default: extra[k] = v;
+      }
+    }
+    return { style, extra };
+  }
+  function styleHasContent(st) {
+    return st && (st.bg || st.color || st.stroke || st.strokeWidth > 0 || st.radius > 0 ||
+      st.dashed || st.fontFamily || st.fontSize > 0 || st.bold || st.italic ||
+      st.bgOpacity != null ||
+      (st.extra && Object.keys(st.extra).length));
+  }
+
+  /* ---------- parser 主体 ---------- */
+  const parser = {};
+  parser.parseFlowchart = function (src) {
+    const warnings = [];
+    const doc = model.createDoc();
+    const ext = doc.meta.extensions;
+    const lines = String(src ?? '').replace(/^\uFEFF/, '').split('\n');
+    const byId = new Map();
+    const classDefs = new Map();
+    let direction = '';
+    let sawHead = false;
+    const sgStack = [];                            // subgraph 栈（物化 group 节点）
+
+    const joinGroup = id => {                      // 节点归入当前最内层 subgraph
+      if (sgStack.length) {
+        const g = byId.get(sgStack[sgStack.length - 1]);
+        if (g && !g.children.includes(id)) g.children.push(id);
+      }
+    };
+    const ensureNode = (id, type, label) => {
+      if (!id) return null;
+      let n = byId.get(id);
+      if (!n) {
+        n = { id, type: type || 'rect', text: label != null ? label : id, style: {} };
+        doc.nodes.push(n); byId.set(id, n);
+        joinGroup(id);
+      } else if (type) {
+        n.type = type;                             // 后定义覆盖形状
+        if (label != null) n.text = label;
+      }
+      return n;
+    };
+
+    for (let li = 0; li < lines.length; li++) {
+      const raw = lines[li];
+      const t = raw.trim();
+      if (!t) continue;
+      if (t.startsWith('%%{')) {                   // init 指令（含跨行块）
+        let buf = t;
+        while (!/}%%\s*$/.test(buf) && li + 1 < lines.length) buf += '\n' + lines[++li];
+        ext.initLines.push(buf);
+        continue;
+      }
+      if (t.startsWith('%%')) continue;            // 注释
+      if (/^(flowchart|graph)\b/i.test(t)) {
+        if (sawHead) continue;
+        sawHead = true;
+        const m = /^(?:flowchart|graph)\s+(?:\S+\s+)?([A-Za-z]{2})\s*$/i.exec(t);
+        direction = (m && /^(TD|TB|BT|RL|LR)$/i.test(m[1])) ? m[1].toUpperCase() : 'TD';
+        continue;
+      }
+      if (!sawHead) { warnings.push(FLOW_ONLY_MSG + '（未找到 flowchart/graph 声明）'); return { doc: null, warnings, error: FLOW_ONLY_MSG }; }
+      if (/^(sequenceDiagram|classDiagram|stateDiagram|erDiagram|journey|gantt|pie|mindmap|timeline|gitGraph|flowchart-v2|sankey|xychart|block-beta|quadrantChart|requirementDiagram|C4Context)\b/i.test(t)) {
+        warnings.push(FLOW_ONLY_MSG);
+        return { doc: null, warnings, error: FLOW_ONLY_MSG };
+      }
+      if (t === 'end') { if (sgStack.length) sgStack.pop(); else warnings.push(`第 ${li + 1} 行：多余的 end`); continue; }
+      const sgM = /^subgraph\s+(.+)$/i.exec(t);
+      if (sgM) {
+        const body = sgM[1].trim();
+        let gid = null, title = '';
+        const mm = /^([A-Za-z0-9_\u4e00-\u9fff]+)\s*(?:\[(.*)\]|\((.*)\))?$/.exec(body);
+        if (mm) {
+          gid = mm[1];
+          const cap = (mm[2] ?? mm[3] ?? '').trim().replace(/^"(.*)"$/, '$1');
+          title = unescapeLabel(cap);
+        }
+        if (!gid) { gid = model.genId(doc, 'sg'); title = unescapeLabel(body); }
+        const g = ensureNode(gid, 'group', title || gid);
+        g.children = g.children || [];
+        sgStack.push(gid);
+        continue;
+      }
+      let m;
+      if ((m = /^classDef\s+([\w\u4e00-\u9fff\-]+)\s+(.+)$/.exec(t))) {
+        if (m[1] === 'default') {
+          const dv = parseStyleKV(m[2]);
+          for (const n of doc.nodes) if (n.type !== 'group') n.style = Object.assign(n.style, dv.style, { extra: Object.assign({}, n.style.extra, dv.extra) });
+        } else classDefs.set(m[1], parseStyleKV(m[2]));
+        continue;
+      }
+      if ((m = /^class\s+([\w\u4e00-\u9fff\-,\s]+)\s+([\w\u4e00-\u9fff\-]+)\s*$/.exec(t))) {
+        const cd = classDefs.get(m[2]);
+        if (!cd) { warnings.push(`第 ${li + 1} 行：class 引用了未定义的类「${m[2]}」`); continue; }
+        for (const id of m[1].split(',')) {
+          const n = byId.get(id.trim());
+          if (n) n.style = Object.assign(n.style, cd.style, { extra: Object.assign({}, n.style.extra, cd.extra) });
+          else warnings.push(`第 ${li + 1} 行：class 应用于未定义节点「${id.trim()}」`);
+        }
+        continue;
+      }
+      if ((m = /^style\s+([\w\u4e00-\u9fff\-]+)\s+(.+)$/.exec(t))) {
+        const n = byId.get(m[1]);
+        const kv = parseStyleKV(m[2]);
+        if (n) n.style = Object.assign(n.style, kv.style, { extra: Object.assign({}, n.style.extra, kv.extra) });
+        else warnings.push(`第 ${li + 1} 行：style 应用于未定义节点「${m[1]}」（节点须先定义）`);
+        continue;
+      }
+      if (/^(click|call|linkStyle|direction)\b/.test(t)) {
+        ext.rawLines.push(t);
+        warnings.push(`第 ${li + 1} 行：语法未支持「${t.split(/\s/)[0]}」，编辑将忽略`);
+        continue;
+      }
+      if (!isFlowHead(t)) {
+        /* --- 节点/边语句：先提取形状，再在骨架上切边 --- */
+        const { masked, tokens } = extractShapes(raw);
+        let pos = 0;
+        let leftIds = null;
+        let guard = 0;
+        while (guard++ < 64) {
+          const edge = scanEdge(masked, pos);
+          if (!edge) {
+            const seg = masked.slice(pos).trim();
+            if (seg) {
+              const ids = nodeSegIds(seg, tokens, warnings, li + 1);
+              if (!ids.length && /[^\s|]/.test(seg)) {
+                ext.rawLines.push(t);
+                warnings.push(`第 ${li + 1} 行：语法未支持，编辑将忽略`);
+                break;
+              }
+              for (const nt of ids) ensureNode(nt.id, nt.type, nt.label);
+            }
+            break;
+          }
+          const lseg = masked.slice(pos, edge.index).trim();
+          leftIds = nodeSegIds(lseg, tokens, warnings, li + 1);
+          if (!leftIds.length) {
+            ext.rawLines.push(t);
+            warnings.push(`第 ${li + 1} 行：语法未支持，编辑将忽略`);
+            break;
+          }
+          for (const nt of leftIds) ensureNode(nt.id, nt.type, nt.label);
+          /* 管道 label（边符后紧跟 |lbl|） */
+          let lbl = edge.label, next = edge.end;
+          if (lbl == null) {
+            const pl = pipeLabel(masked, edge.end);
+            if (pl.label != null) { lbl = pl.label; next = pl.end; }
+          }
+          /* 右侧节点段（到下一边符/行尾） */
+          const nextEdge = scanEdge(masked, next);
+          const rseg = masked.slice(next, nextEdge ? nextEdge.index : masked.length).trim();
+          const rightIds = nodeSegIds(rseg, tokens, warnings, li + 1);
+          if (!rightIds.length) {
+            ext.rawLines.push(t);
+            warnings.push(`第 ${li + 1} 行：边缺少目标节点，编辑将忽略`);
+            break;
+          }
+          for (const nt of rightIds) ensureNode(nt.id, nt.type, nt.label);
+          for (const a of leftIds) for (const b of rightIds) {
+            if (a.id === b.id) { warnings.push(`第 ${li + 1} 行：忽略自环边 ${a.id}`); continue; }
+            doc.edges.push({ id: 'e' + doc.edges.length + '_' + a.id + '_' + b.id, from: a.id, to: b.id, kind: edge.kind, label: lbl || '' });
+          }
+          if (!nextEdge) break;
+          pos = nextEdge.end;                      // 链式 A-->B-->C：越过边符继续
+        }
+        continue;
+      }
+    }
+    if (sgStack.length) warnings.push('subgraph 未闭合（缺 end），已按源码截断处理');
+    doc.meta.direction = direction || 'TD';
+    /* 标注节点回读：fill:none + stroke:none 的 classDef/style → label（serializer 的等价输出） */
+    for (const n of doc.nodes) {
+      if (n.style && n.style.bg === 'none' && n.style.stroke === 'none') {
+        n.type = 'label';
+        delete n.style.bg; delete n.style.stroke;
+      }
+    }
+    return { doc, warnings };
+  };
+
+  /* ---------- 9.4 Editor.serializer：MteDoc → 源码（样式去重 classDef/class；布局不回写） ---------- */
+  const SHAPE_SYNTAX = {
+    rect: t => `[${t}]`,
+    round: t => `(${t})`,
+    diamond: t => `{${t}}`,
+    stadium: t => `([${t}])`,
+    cylinder: t => `[(${t})]`,
+    circle: t => `((${t}))`,
+    parallelogram: t => `[/${t}/]`,
+  };
+  const serializer = {};
+  serializer.serialize = function (doc) {
+    const L = [];
+    for (const ini of (doc.meta.extensions.initLines || [])) L.push(ini);
+    L.push('flowchart ' + (doc.meta.direction || 'TD'));
+    const childOf = new Map();                     // group id → Set(成员 id)
+    const parentOf = new Map();
+    for (const n of doc.nodes) if (n.type === 'group') childOf.set(n.id, new Set(n.children || []));
+    for (const [gid, set] of childOf) for (const cid of set) if (childOf.has(cid) || byId(doc, cid)) parentOf.set(cid, gid);
+    const emitted = new Set();
+    const nodeLine = n => {
+      if (n.text === n.id) return n.id;            // 裸节点（label=id）
+      if (n.type === 'parallelogram')              // mermaid 对 [/".."/] 报 STR token 错 → 平行四边形不加内部引号
+        return n.id + '[/' + escLabel(n.text) + '/]';
+      const wrap = SHAPE_SYNTAX[n.type] || SHAPE_SYNTAX.rect;
+      return n.id + wrap('"' + escLabel(n.text) + '"');
+    };
+    const emitGroup = (g, depth) => {
+      const pad = '  '.repeat(depth);
+      const title = g.text && g.text !== g.id ? `["${escLabel(g.text)}"]` : '';
+      L.push(`${pad}subgraph ${g.id}${title}`);
+      for (const cid of (g.children || [])) {
+        const c = byId(doc, cid);
+        if (!c) continue;
+        if (c.type === 'group') { if (!emitted.has(cid)) { emitted.add(cid); emitGroup(c, depth + 1); } }
+        else if (!emitted.has(cid)) { emitted.add(cid); L.push(pad + '  ' + nodeLine(c)); }
+      }
+      L.push(pad + 'end');
+    };
+    for (const n of doc.nodes) {
+      if (n.type === 'group') { if (!emitted.has(n.id)) { emitted.add(n.id); emitGroup(n, 0); } continue; }
+      if (emitted.has(n.id)) continue;             // 已作为成员输出
+      if (parentOf.has(n.id)) continue;            // 成员但父组丢失（异常防御）：跳过
+      L.push(nodeLine(n));
+    }
+    for (const e of doc.edges) {
+      const a = e.from, b = e.to;
+      const lbl = e.label ? escLabel(e.label) : '';
+      switch (e.kind) {
+        case 'line': L.push(lbl ? `${a} ---|${lbl}| ${b}` : `${a} --- ${b}`); break;
+        case 'dotted': L.push(lbl ? `${a} -. ${lbl} .-> ${b}` : `${a} -.-> ${b}`); break;
+        case 'thick': L.push(lbl ? `${a} == ${lbl} ==> ${b}` : `${a} ==> ${b}`); break;
+        default: L.push(lbl ? `${a} -->|${lbl}| ${b}` : `${a} --> ${b}`);
+      }
+    }
+    for (const t of (doc.meta.extensions.rawLines || [])) L.push('%% [未支持·已保留] ' + t);
+    /* 样式去重：签名分组 → classDef cN + class …（9.8-8）。label（标注）节点强制无边框透明。 */
+    const groups = new Map();
+    for (const n of doc.nodes) {
+      const isLabel = n.type === 'label';
+      if (n.type === 'group' || (!styleHasContent(n.style) && !isLabel)) continue;
+      const s = n.style;
+      const sig = JSON.stringify([s.bg || 0, s.color || 0, s.stroke || 0, s.strokeWidth || 0,
+        s.radius || 0, !!s.dashed, s.fontFamily || 0, s.fontSize || 0, !!s.bold, !!s.italic,
+        s.align || 0, s.bgOpacity == null ? 0 : s.bgOpacity, s.extra || 0, isLabel]);
+      if (!groups.has(sig)) groups.set(sig, { ids: [], style: s, isLabel });
+      groups.get(sig).ids.push(n.id);
+    }
+    if (groups.size) {
+      let i = 0;
+      for (const { ids, style: s, isLabel } of groups.values()) {
+        const cn = 'c' + i++;
+        const kv = [];
+        if (isLabel && !s.bg) kv.push('fill:none');
+        if (s.bg) kv.push('fill:' + s.bg);
+        if (s.color) kv.push('color:' + s.color);
+        if (isLabel && !s.stroke) kv.push('stroke:none');
+        if (s.stroke) kv.push('stroke:' + s.stroke);
+        if (s.strokeWidth > 0) kv.push('stroke-width:' + s.strokeWidth + 'px');
+        else if (isLabel) kv.push('stroke-width:0px');
+        if (s.radius > 0) kv.push('rx:' + Math.round(s.radius) + 'px');
+        if (s.bgOpacity != null && s.bgOpacity < 1) kv.push('fill-opacity:' + s.bgOpacity);
+        if (s.dashed) kv.push('stroke-dasharray:6 4');
+        if (s.fontFamily) kv.push('font-family:' + (/[,']/.test(s.fontFamily) ? `'${s.fontFamily}'` : s.fontFamily));
+        if (s.fontSize > 0) kv.push('font-size:' + s.fontSize + 'px');
+        if (s.bold) kv.push('font-weight:bold');
+        if (s.italic) kv.push('font-style:italic');
+        if (s.align) kv.push('text-align:' + s.align);
+        for (const k in (s.extra || {})) kv.push(k + ':' + s.extra[k]);
+        if (!kv.length) continue;                    // 签名有值但无可输出键（如 bgOpacity=1）：裸 classDef 是语法错误
+        L.push(`classDef ${cn} ${kv.join(',')}`);
+        L.push(`class ${ids.join(',')} ${cn}`);
+      }
+    }
+    return L.join('\n');
+  };
+  function byId(doc, id) { return doc.nodes.find(n => n.id === id); }
+
+  /* ---------- 9.5 Editor.commands + Editor.history ----------
+     全部修改走命令：apply(doc)/revert(doc)；UI 禁止直改 Model。
+     合并（§9.5）：node.text 同 id 800ms 窗口合并、node.style 同 id 同字段合并——
+     实现 = 栈顶命令 absorb 新命令（旧值快照保持栈顶首次的，undo 一步回最初）。 */
+  const history = {
+    undoStack: [], redoStack: [],
+    MAX: 100,
+    push(cmd) {
+      this.undoStack.push(cmd);
+      if (this.undoStack.length > this.MAX) this.undoStack.shift();
+      this.redoStack = [];
+      this.changed();
+    },
+    undo() {
+      const cmd = this.undoStack.pop();
+      if (!cmd) return false;
+      cmd.revert(api.doc);
+      this.redoStack.push(cmd);
+      this.changed();
+      if (api.afterChange) api.afterChange('undo');   // 撤销后画布/编辑栏同步重绘
+      return true;
+    },
+    redo() {
+      const cmd = this.redoStack.pop();
+      if (!cmd) return false;
+      cmd.apply(api.doc);
+      this.undoStack.push(cmd);
+      this.changed();
+      if (api.afterChange) api.afterChange('redo');
+      return true;
+    },
+    canUndo() { return this.undoStack.length > 0; },
+    canRedo() { return this.redoStack.length > 0; },
+    clear() { this.undoStack = []; this.redoStack = []; this.changed(); },
+    changed() { if (api.onHistory) api.onHistory(); },
+  };
+
+  function patchStyle(target, patch) {
+    for (const k in patch) {
+      const v = patch[k];
+      if (k === 'extra') { target.extra = Object.assign({}, target.extra, v); continue; }
+      if (v === null || v === '' || v === false) { delete target[k]; continue; }
+      target[k] = v;
+    }
+  }
+  /* 画布扩容（纯数据，命令 apply 内调用）：节点出界时扩大 layout.canvas（只扩不缩） */
+  function ensureCanvasDoc(d0, pad = 80) {
+    const L = d0.layout;
+    let mx = 0, my = 0;
+    for (const k in L.node) {
+      mx = Math.max(mx, L.node[k].x + L.node[k].w);
+      my = Math.max(my, L.node[k].y + L.node[k].h);
+    }
+    if (mx + pad > L.canvas.w) L.canvas.w = mx + pad;
+    if (my + pad > L.canvas.h) L.canvas.h = my + pad;
+  }
+  function makeCommand(type, p) {
+    switch (type) {
+      case 'node.add': {
+        const d = deepClone(p.node);
+        const box = { x: p.x, y: p.y, w: p.w, h: p.h };
+        return {
+          at: Date.now(), label: '添加节点',
+          apply(d0) { if (!d0.nodes.some(n => n.id === d.id)) { d0.nodes.push(d); d0.layout.node[d.id] = box; } },
+          revert(d0) {
+            const i = d0.nodes.indexOf(d); if (i >= 0) d0.nodes.splice(i, 1);
+            delete d0.layout.node[d.id];
+          },
+        };
+      }
+      case 'node.delete': {
+        let node = null, idx = -1, removedEdges = [], removedFrom = null, box = null;
+        return {
+          at: Date.now(), label: '删除节点',
+          apply(d0) {
+            idx = d0.nodes.findIndex(n => n.id === p.id);
+            node = idx >= 0 ? d0.nodes[idx] : null;
+            if (!node) return;
+            box = d0.layout.node[p.id] ? Object.assign({}, d0.layout.node[p.id]) : null;
+            d0.nodes.splice(idx, 1);
+            removedEdges = [];
+            for (let i = d0.edges.length - 1; i >= 0; i--) {
+              const e = d0.edges[i];
+              if (e.from === p.id || e.to === p.id) { removedEdges.unshift({ e, i }); d0.edges.splice(i, 1); }
+            }
+            for (const g of d0.nodes) {
+              if (g.type === 'group' && (g.children || []).includes(p.id)) {
+                removedFrom = g.id;
+                g.children = g.children.filter(c => c !== p.id);
+              }
+            }
+            delete d0.layout.node[p.id];
+          },
+          revert(d0) {
+            if (!node) return;
+            d0.nodes.splice(Math.min(idx, d0.nodes.length), 0, node);
+            for (const { e, i } of removedEdges) d0.edges.splice(Math.min(i, d0.edges.length), 0, e);
+            if (removedFrom) {
+              const g = d0.nodes.find(n => n.id === removedFrom);
+              if (g) g.children = [...(g.children || []), p.id];
+            }
+            if (box) d0.layout.node[p.id] = box;
+          },
+        };
+      }
+      case 'node.text': {
+        let old = null;
+        return {
+          at: Date.now(), mergeKey: 'text:' + p.id, label: '改文字',
+          absorb(other) { p.text = other.p.text; this.at = other.at; },
+          apply(d0) { const n = d0.nodes.find(x => x.id === p.id); if (!n) return; if (old === null) old = n.text; n.text = p.text; },
+          revert(d0) { const n = d0.nodes.find(x => x.id === p.id); if (n && old !== null) n.text = old; },
+          p,
+        };
+      }
+      case 'node.style': {
+        let old = null;
+        return {
+          at: Date.now(),
+          mergeKey: 'style:' + p.id + ':' + Object.keys(p.patch).filter(k => k !== 'extra').sort().join(','),
+          label: '改样式',
+          absorb(other) { Object.assign(p.patch, other.p.patch); this.at = other.at; },
+          apply(d0) {
+            const n = d0.nodes.find(x => x.id === p.id);
+            if (!n) return;
+            if (!old) old = deepClone(n.style || {});
+            n.style = n.style || {};
+            patchStyle(n.style, p.patch);
+          },
+          revert(d0) { const n = d0.nodes.find(x => x.id === p.id); if (n && old) n.style = deepClone(old); },   // deepClone 断开共享：redo 的 patchStyle 不得污染快照
+          p,
+        };
+      }
+      case 'node.move': {
+        let old = null;
+        return {
+          at: Date.now(), label: '移动',
+          apply(d0) {
+            const L = d0.layout.node[p.id];
+            if (!L) return;
+            if (!old) old = { x: L.x, y: L.y, canvas: { ...d0.layout.canvas } };
+            L.x = p.x; L.y = p.y;
+            ensureCanvasDoc(d0);
+          },
+          revert(d0) {
+            const L = d0.layout.node[p.id];
+            if (L && old) { L.x = old.x; L.y = old.y; }
+            if (old && old.canvas) d0.layout.canvas = { ...old.canvas };   // 拷贝赋值：apply 的 ensureCanvasDoc 不得污染快照
+          },
+        };
+      }
+      case 'node.resize': {
+        let old = null;
+        return {
+          at: Date.now(), label: '调整大小',
+          apply(d0) {
+            const L = d0.layout.node[p.id];
+            if (!L) return;
+            if (!old) old = { x: L.x, y: L.y, w: L.w, h: L.h, canvas: { ...d0.layout.canvas } };
+            if (p.x != null) L.x = p.x;
+            if (p.y != null) L.y = p.y;
+            L.w = p.w; L.h = p.h;
+            ensureCanvasDoc(d0);
+          },
+          revert(d0) {
+            const L = d0.layout.node[p.id];
+            if (L && old) Object.assign(L, { x: old.x, y: old.y, w: old.w, h: old.h });
+            if (old && old.canvas) d0.layout.canvas = { ...old.canvas };
+          },
+        };
+      }
+      case 'edge.add': {
+        const e = { id: p.id || ('e' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5)), from: p.from, to: p.to, kind: p.kind || 'arrow', label: p.label || '' };
+        return {
+          at: Date.now(), label: '添加连线',
+          apply(d0) {
+            if (!d0.edges.some(x => x.from === e.from && x.to === e.to && x.kind === e.kind && x.label === e.label)) {
+              d0.edges.push(e);
+              if (p.anchors) {                                 // 吸附锚点（D3：布局数据不回写源码）
+                if (!d0.layout.edge) d0.layout.edge = {};      // 旧快照无 edge 段时防御
+                d0.layout.edge[e.id] = p.anchors;
+              }
+            }
+          },
+          revert(d0) {
+            const i = d0.edges.indexOf(e);
+            if (i >= 0) d0.edges.splice(i, 1);
+            delete d0.layout.edge[e.id];
+          },
+        };
+      }
+      case 'edge.delete': {
+        let e = null, i = -1, anch = null;
+        return {
+          at: Date.now(), label: '删除连线',
+          apply(d0) {
+            i = d0.edges.findIndex(x => x.id === p.id);
+            if (i >= 0) {
+              e = d0.edges[i]; d0.edges.splice(i, 1);
+              anch = d0.layout.edge[p.id] || null;
+              delete d0.layout.edge[p.id];
+            }
+          },
+          revert(d0) {
+            if (e) d0.edges.splice(Math.min(i, d0.edges.length), 0, e);
+            if (anch) d0.layout.edge[e.id] = anch;
+          },
+        };
+      }
+      case 'node.moveMany': {                        // 多选整组移动（一条命令，undo 一步回退）
+        let old = null;
+        return {
+          at: Date.now(), label: '批量移动',
+          apply(d0) {
+            if (!old) old = {
+              canvas: { ...d0.layout.canvas },
+              items: p.moves.map(m => {
+                const L = d0.layout.node[m.id];
+                return { id: m.id, x: L ? L.x : 0, y: L ? L.y : 0 };
+              }),
+            };
+            for (const m of p.moves) {
+              const L = d0.layout.node[m.id];
+              if (L) { L.x = m.x; L.y = m.y; }
+            }
+            ensureCanvasDoc(d0);
+          },
+          revert(d0) {
+            if (!old) return;
+            for (const it of old.items) {
+              const L = d0.layout.node[it.id];
+              if (L) { L.x = it.x; L.y = it.y; }
+            }
+            d0.layout.canvas = { ...old.canvas };
+          },
+        };
+      }
+      case 'nodes.delete': {                         // 多选批量删除（节点+关联边+组归属一次回退）
+        let removed = null;
+        return {
+          at: Date.now(), label: '批量删除',
+          apply(d0) {
+            const ids = new Set(p.ids);
+            removed = { nodes: [], edges: [], parents: [], boxes: [] };
+            for (let i = d0.nodes.length - 1; i >= 0; i--) {
+              const n = d0.nodes[i];
+              if (ids.has(n.id)) {
+                removed.nodes.unshift({ node: n, idx: i });
+                removed.boxes.unshift({ id: n.id, box: d0.layout.node[n.id] ? { ...d0.layout.node[n.id] } : null });
+                d0.nodes.splice(i, 1);
+                delete d0.layout.node[n.id];
+              }
+            }
+            for (let i = d0.edges.length - 1; i >= 0; i--) {
+              const e = d0.edges[i];
+              if (ids.has(e.from) || ids.has(e.to)) { removed.edges.unshift({ e, i }); d0.edges.splice(i, 1); }
+            }
+            for (const g of d0.nodes) {
+              if (g.type === 'group' && (g.children || []).some(c => ids.has(c))) {
+                removed.parents.push({ id: g.id, children: [...g.children] });
+                g.children = g.children.filter(c => !ids.has(c));
+              }
+            }
+          },
+          revert(d0) {
+            if (!removed) return;
+            for (const { node, idx } of removed.nodes) d0.nodes.splice(Math.min(idx, d0.nodes.length), 0, node);
+            for (const { e, i } of removed.edges) d0.edges.splice(Math.min(i, d0.edges.length), 0, e);
+            for (const { id, box } of removed.boxes) if (box) d0.layout.node[id] = box;
+            for (const pt of removed.parents) {
+              const g = d0.nodes.find(n => n.id === pt.id);
+              if (g) g.children = pt.children;
+            }
+          },
+        };
+      }
+      case 'edge.mid': {                            // 拖动边中点 → 弯折控制点（布局数据，不回写源码）
+        let oldMid = null, had = false;
+        return {
+          at: Date.now(), label: '弯折连线',
+          apply(d0) {
+            if (!d0.layout.edge) d0.layout.edge = {};
+            if (!d0.layout.edge[p.id]) d0.layout.edge[p.id] = {};
+            if (!had) { had = true; oldMid = d0.layout.edge[p.id].mid ? { ...d0.layout.edge[p.id].mid } : null; }
+            d0.layout.edge[p.id].mid = { x: p.x, y: p.y };
+          },
+          revert(d0) {
+            if (!had || !d0.layout.edge || !d0.layout.edge[p.id]) return;
+            if (oldMid) d0.layout.edge[p.id].mid = oldMid;
+            else delete d0.layout.edge[p.id].mid;
+          },
+        };
+      }
+      case 'edge.anchor': {                         // 修改边端点：end='a'|'b'，v=锚点索引 0-7，nodeId 可换端点节点
+        let oldV = null, oldNode = null, had = false;
+        return {
+          at: Date.now(), label: '改连线端点',
+          apply(d0) {
+            const e = d0.edges.find(x => x.id === p.id);
+            if (!e) return;
+            if (!d0.layout.edge) d0.layout.edge = {};
+            if (!d0.layout.edge[p.id]) d0.layout.edge[p.id] = {};
+            if (!had) {
+              had = true;
+              oldV = d0.layout.edge[p.id][p.end] != null ? d0.layout.edge[p.id][p.end] : null;
+              oldNode = p.end === 'a' ? e.from : e.to;
+            }
+            d0.layout.edge[p.id][p.end] = p.v;
+            if (p.nodeId && p.nodeId !== oldNode) {   // 点击了其他节点 → 连节点一起换
+              if (p.end === 'a') e.from = p.nodeId; else e.to = p.nodeId;
+            }
+          },
+          revert(d0) {
+            if (!had) return;
+            const e = d0.edges.find(x => x.id === p.id);
+            if (e && p.nodeId && p.nodeId !== oldNode) {
+              if (p.end === 'a') e.from = oldNode; else e.to = oldNode;
+            }
+            const le = d0.layout.edge && d0.layout.edge[p.id];
+            if (le) { if (oldV != null) le[p.end] = oldV; else delete le[p.end]; }
+          },
+        };
+      }
+      default: throw new Error('未知命令类型: ' + type);
+    }
+  }
+  const commands = {
+    exec(type, payload) {
+      if (!api.doc) return false;
+      try {
+        const cmd = makeCommand(type, payload);
+        cmd.apply(api.doc);
+        /* 合并窗口：同 mergeKey 且 800ms 内 → 栈顶 absorb（合同 §9.5 合并策略） */
+        const top = history.undoStack[history.undoStack.length - 1];
+        const now = Date.now();
+        if (cmd.mergeKey && top && top.mergeKey === cmd.mergeKey && now - top.at < 800 && top.absorb) {
+          top.absorb(cmd);
+        } else {
+          history.push(cmd);
+        }
+        api.afterChange(type, payload);
+        return true;
+      } catch (e) { console.error('[mte] 命令执行失败', type, e); return false; }
+    },
+  };
+
+  const api = {
+    model, parser, serializer, commands, history,
+    registry: null, canvas: null, panel: null, sync: null,
+    THEME, doc: null, active: false, selectedId: null, selectedIds: new Set(), selectedEdge: null,
+    afterChange() {}, onHistory() {},
+  };
+
+  /* ---------- 9.6 Editor.registry：组件与编辑栏都不写死（扩展只 register） ---------- */
+  const registry = {
+    components: [],
+    groups: [],
+    registerComponent(def) { this.components.push(def); },
+    registerGroup(def) {
+      this.groups.push(def);
+      this.groups.sort((a, b) => (a.order || 99) - (b.order || 99));
+    },
+  };
+  function thumbSvg(inner) {
+    return `<svg viewBox="0 0 40 26" xmlns="${NS}">${inner}</svg>`;
+  }
+  const THUMBS = {
+    rect:          thumbSvg('<rect x="2" y="3" width="36" height="20" rx="2" fill="#263048" stroke="#7e8db5" stroke-width="1.4"/>'),
+    round:         thumbSvg('<rect x="2" y="3" width="36" height="20" rx="8" fill="#263048" stroke="#7e8db5" stroke-width="1.4"/>'),
+    stadium:       thumbSvg('<rect x="2" y="3" width="36" height="20" rx="10" fill="#263048" stroke="#7e8db5" stroke-width="1.4"/>'),
+    diamond:       thumbSvg('<polygon points="20,1 39,13 20,25 1,13" fill="#263048" stroke="#7e8db5" stroke-width="1.4"/>'),
+    cylinder:      thumbSvg('<path d="M 5,6 L 5,20 A 15,4.5 0 0 0 35,20 L 35,6" fill="#263048" stroke="#7e8db5" stroke-width="1.4"/><ellipse cx="20" cy="6" rx="15" ry="4.5" fill="#263048" stroke="#7e8db5" stroke-width="1.4"/>'),
+    circle:        thumbSvg('<ellipse cx="20" cy="13" rx="17" ry="11" fill="#263048" stroke="#7e8db5" stroke-width="1.4"/>'),
+    parallelogram: thumbSvg('<polygon points="9,3 38,3 31,23 2,23" fill="#263048" stroke="#7e8db5" stroke-width="1.4"/>'),
+    group:         thumbSvg('<rect x="2" y="3" width="36" height="20" rx="4" fill="rgba(124,58,237,.18)" stroke="#8b5cf6" stroke-width="1.2" stroke-dasharray="3 2"/><rect x="4" y="6" width="10" height="3" fill="#8b5cf6"/>'),
+    label:         thumbSvg('<rect x="3" y="4" width="34" height="18" rx="4" fill="none" stroke="#8b93a7" stroke-width="1" stroke-dasharray="3 2"/><text x="20" y="17" text-anchor="middle" font-size="11" fill="#e6e9f2">标注</text>'),
+  };
+  const NODE_SIZES = {
+    rect: [160, 60], round: [160, 60], stadium: [176, 60], diamond: [150, 84],
+    cylinder: [150, 72], circle: [96, 96], parallelogram: [176, 60], group: [280, 130],
+    label: [96, 30],
+  };
+  function createDefaultNode(type) {
+    const [w, h] = NODE_SIZES[type] || NODE_SIZES.rect;
+    return {
+      id: model.genId(api.doc, type === 'group' ? 'sg' : 'n'),
+      type: NODE_SIZES[type] ? type : 'rect',
+      text: type === 'group' ? '分组' : type === 'label' ? '标注' : '新节点',
+      style: {},
+      ...(type === 'group' ? { children: [] } : {}),
+      _w: w, _h: h,
+    };
+  }
+  for (const [type, label] of [
+    ['rect', '矩形'], ['round', '圆角'], ['stadium', '体育场'], ['diamond', '菱形'],
+    ['cylinder', '圆柱(库)'], ['circle', '圆'], ['parallelogram', '平行四边形'], ['group', '分组'],
+    ['label', '标注'],
+  ]) registry.registerComponent({ type, label, thumbnail: THUMBS[type], createDefault: () => createDefaultNode(type) });
+
+  /* 连线组件（箭头/实线/虚线）：拖入画布后进入连线模式，首尾点击目标节点、
+     自动吸附其 8 锚点（四角+四边中点） */
+  const EDGE_LINE_THUMB = (dash, marker) => thumbSvg(
+    `<line x1="4" y1="13" x2="${marker ? 30 : 36}" y2="13" stroke="#94a3b8" stroke-width="2"${dash ? ' stroke-dasharray="5 4"' : ''}/>` +
+    (marker ? '<polygon points="30,8 38,13 30,18" fill="#94a3b8"/>' : ''));
+  for (const [kind, label] of [['arrow', '箭头'], ['line', '实线'], ['dotted', '虚线']])
+    registry.registerComponent({
+      type: 'edge_' + kind, label, edgeKind: kind,
+      thumbnail: EDGE_LINE_THUMB(kind === 'dotted', kind === 'arrow'),
+      createDefault: null,                       // 连线组件不创建节点
+    });
+
+  /* ---------- 9.4 Editor.canvas：自绘 SVG 交互层（D2） ---------- */
+  let gEdges = null, gGroups = null, gNodes = null, gOverlay = null, cDefs = null;
+  let drag = null;                                    // 拖拽会话：move / multi-move / resize / marquee
+  const liveBoxes = new Map();                        // 拖拽中的临时几何（id → {x,y,w,h}），pointerup 清空
+  const D = () => api.doc;
+  const canvas = {
+    svg: null,
+    linkPending: null,                                // 连线模式：{kind, from:{id,a}|null}
+    edgeEndPending: null,                             // 边端点重选：{id, end:'a'|'b'}
+    get mounted() { return !!this.svg; },
+    mount(container) {
+      this.unmount();
+      container.innerHTML = '';
+      const svg = svgEl('svg', { id: 'mteCanvas' });
+      cDefs = svgEl('defs');
+      const marker = svgEl('marker', { id: 'mteArrow', viewBox: '0 0 10 10', refX: 8.5, refY: 5, markerWidth: 7.5, markerHeight: 7.5, orient: 'auto-start-reverse' });
+      marker.appendChild(svgEl('path', { d: 'M 0,0 L 10,5 L 0,10 z', fill: THEME.edge }));
+      cDefs.appendChild(marker);
+      gEdges = svgEl('g');                       // 边可命中（选中编辑）：命中热区在 drawEdge 内部
+      gGroups = svgEl('g');
+      gNodes = svgEl('g');
+      gOverlay = svgEl('g', { 'pointer-events': 'none' });
+      /* 手柄需要独立接收指针事件 */
+      gOverlay.setAttribute('pointer-events', 'none');
+      svg.append(cDefs, gEdges, gGroups, gNodes, gOverlay);
+      container.appendChild(svg);
+      this.svg = svg;
+      this.bindEvents(svg);
+      this.applyCanvasSize();
+    },
+    unmount() {
+      if (this.svg && this.svg.parentNode) this.svg.parentNode.removeChild(this.svg);
+      this.svg = null; gEdges = gGroups = gNodes = gOverlay = null;
+      drag = null; liveBoxes.clear();
+      this.linkPending = null; this.edgeEndPending = null;
+      edgeLiveMid = null;
+    },
+    /* 选中边的弯折中点：layout.edge[id].mid 或两端点默认中点 */
+    edgeMidOf(e) {
+      const d0 = D();
+      const geo = edgeGeom(e);
+      const m = d0.layout.edge && d0.layout.edge[e.id] && d0.layout.edge[e.id].mid;
+      if (m) return m;
+      return geo ? { x: (geo.p1.x + geo.p2.x) / 2, y: (geo.p1.y + geo.p2.y) / 2 } : { x: 0, y: 0 };
+    },
+    /* 命中测试：选中边的中点圆（拖动弯折） */
+    hitEdgeMid(ev) {
+      const d0 = D();
+      const e = d0.edges.find(x => x.id === api.selectedEdge);
+      if (!e) return false;
+      const c = this.screenToCanvas(ev.clientX, ev.clientY);
+      const m = this.edgeMidOf(e);
+      const th = 10 / Math.max(state.scale, 0.05);
+      return (c.x - m.x) ** 2 + (c.y - m.y) ** 2 <= th * th;
+    },
+    /* 中点拖动：pointermove 只改画布预览，pointerup 落 edge.mid 命令 */
+    beginEdgeMidDrag(ev) {
+      drag = { mode: 'edge-mid', id: api.selectedEdge, moved: false };
+      try { ev.target.setPointerCapture(ev.pointerId); } catch (_) {}
+    },
+    applyCanvasSize() {
+      if (!this.svg) return;
+      const c = D().layout.canvas;
+      this.svg.setAttribute('width', c.w);
+      this.svg.setAttribute('height', c.h);
+      this.svg.setAttribute('viewBox', `0 0 ${c.w} ${c.h}`);
+      state.vbW = c.w; state.vbH = c.h;
+    },
+    ensureCanvas(pad = 80) {
+      if (!D()) return;
+      ensureCanvasDoc(D(), pad);
+      this.applyCanvasSize();
+    },
+    shrinkToFit() {
+      const L = D().layout;
+      let mx = 800, my = 600;
+      for (const k in L.node) { mx = Math.max(mx, L.node[k].x + L.node[k].w); my = Math.max(my, L.node[k].y + L.node[k].h); }
+      L.canvas = { w: mx + 80, h: my + 80 };
+      this.applyCanvasSize();
+    },
+    syncExport() {
+      if (!this.svg || !D()) return;
+      this.applyCanvasSize();
+      state.lastRawSvg = new XMLSerializer().serializeToString(this.svg);
+    },
+    screenToCanvas(cx, cy) {
+      const r = stage.getBoundingClientRect();
+      return { x: (cx - r.left - state.tx) / state.scale, y: (cy - r.top - state.ty) / state.scale };
+    },
+    /* ---- 绘制 ---- */
+    render() {
+      if (!this.svg) return;
+      gEdges.innerHTML = ''; gGroups.innerHTML = ''; gNodes.innerHTML = '';
+      const d = D();
+      for (const n of d.nodes) {
+        const g = drawNode(n);
+        (n.type === 'group' ? gGroups : gNodes).appendChild(g);
+      }
+      for (const e of d.edges) {
+        const g = drawEdge(e);
+        if (g) gEdges.appendChild(g);
+      }
+      if (api.selectedIds && api.selectedIds.size) {   // 清理已删节点的选中引用
+        api.selectedIds = new Set([...api.selectedIds].filter(id => model.nodeOf(d, id)));
+        api.selectedId = api.selectedIds.has(api.selectedId) ? api.selectedId
+          : (api.selectedIds.size ? [...api.selectedIds][api.selectedIds.size - 1] : null);
+      }
+      if (api.selectedEdge && !d.edges.some(x => x.id === api.selectedEdge)) api.selectedEdge = null;
+      this.drawOverlay();
+      this.applyCanvasSize();
+    },
+    refreshNode(id) {
+      if (!this.svg) return;
+      const d = D();
+      const n = model.nodeOf(d, id);
+      const old = this.nodeG(id);
+      if (old) old.remove();
+      if (n) (n.type === 'group' ? gGroups : gNodes).appendChild(drawNode(n));
+      for (const e of model.edgesOf(d, id)) {
+        const og = gEdges.querySelector(`g[data-id="${CSS.escape(e.id)}"]`);
+        const ng = drawEdge(e);
+        if (og) { if (ng) og.replaceWith(ng); else og.remove(); }
+        else if (ng) gEdges.appendChild(ng);
+      }
+      this.drawOverlay();
+      this.ensureCanvas();
+    },
+    nodeG(id) {
+      return (gNodes.querySelector(`g[data-id="${CSS.escape(id)}"]`) ||
+              gGroups.querySelector(`g[data-id="${CSS.escape(id)}"]`));
+    },
+    drawOverlay() {
+      if (!gOverlay) return;
+      gOverlay.innerHTML = '';
+      const d = D();
+      /* 连线模式：全部节点显示 8 锚点；起点节点高亮变色 */
+      if (this.linkPending) {
+        for (const n of d.nodes) {
+          if (n.type === 'group') continue;
+          const L = d.layout.node[n.id];
+          if (!L) continue;
+          if (this.linkPending.from && this.linkPending.from.id === n.id) {   // 起点节点高亮变色
+            gOverlay.appendChild(svgEl('rect', { class: 'mte-hilite', x: L.x - 6, y: L.y - 6, width: L.w + 12, height: L.h + 12, rx: 6,
+              fill: 'rgba(124,58,237,.28)', stroke: '#7c3aed', 'stroke-width': 2 }));
+            for (const p of nodeAnchors(L))
+              gOverlay.appendChild(svgEl('circle', { class: 'mte-anchor', cx: p.x, cy: p.y, r: 3.2 }));
+            continue;
+          }
+          for (const p of nodeAnchors(L))
+            gOverlay.appendChild(svgEl('circle', { class: 'mte-anchor', cx: p.x, cy: p.y, r: 3.2 }));
+        }
+      }
+      /* 边端点重选模式：全部节点显示 8 锚点（可点同节点其他位置，也可换节点） */
+      if (this.edgeEndPending) {
+        for (const n of d.nodes) {
+          if (n.type === 'group') continue;
+          const L = d.layout.node[n.id];
+          if (!L) continue;
+          for (const p of nodeAnchors(L))
+            gOverlay.appendChild(svgEl('circle', { class: 'mte-anchor', cx: p.x, cy: p.y, r: 4 }));
+        }
+      }
+      /* 选中边的三个编辑点：首/尾方块（点击改端点）+ 中点圆（拖动弯折） */
+      if (api.selectedEdge && !this.linkPending && !this.edgeEndPending) {
+        const e0 = d.edges.find(x => x.id === api.selectedEdge);
+        const geo = e0 && edgeGeom(e0);
+        if (geo) {
+          const H = 9, HS = H / 2;
+          gOverlay.appendChild(svgEl('rect', { class: 'mte-endpt', 'data-end': 'a', x: geo.p1.x - HS, y: geo.p1.y - HS, width: H, height: H, 'pointer-events': 'all', style: 'cursor:pointer' }));
+          gOverlay.appendChild(svgEl('rect', { class: 'mte-endpt', 'data-end': 'b', x: geo.p2.x - HS, y: geo.p2.y - HS, width: H, height: H, 'pointer-events': 'all', style: 'cursor:pointer' }));
+          const mid = this.edgeMidOf(e0);
+          gOverlay.appendChild(svgEl('circle', { class: 'mte-mid', cx: mid.x, cy: mid.y, r: 5, 'pointer-events': 'all', style: 'cursor:move' }));
+        }
+      }
+      /* Ctrl+空白框选进行中：橡皮筋框 */
+      if (drag && drag.mode === 'marquee' && drag.moved) {
+        const x = Math.min(drag.start.x, drag.cur.x), y = Math.min(drag.start.y, drag.cur.y);
+        gOverlay.appendChild(svgEl('rect', { class: 'mte-marquee', x, y,
+          width: Math.abs(drag.cur.x - drag.start.x), height: Math.abs(drag.cur.y - drag.start.y) }));
+      }
+      const ids = api.selectedIds && api.selectedIds.size ? [...api.selectedIds] : [];
+      for (const id of ids) {
+        const L = liveBoxes.get(id) || d.layout.node[id];
+        if (!L || !model.nodeOf(d, id)) continue;
+        gOverlay.appendChild(svgEl('rect', { class: 'mte-selbox', x: L.x - 6, y: L.y - 6, width: L.w + 12, height: L.h + 12, rx: 4 }));
+        if (id === api.selectedId && ids.length === 1) {          // 8 向手柄仅单选
+          const H = 9, HS = H / 2;
+          const pts = {
+            nw: [L.x, L.y], n: [L.x + L.w / 2, L.y], ne: [L.x + L.w, L.y],
+            e: [L.x + L.w, L.y + L.h / 2], se: [L.x + L.w, L.y + L.h],
+            s: [L.x + L.w / 2, L.y + L.h], sw: [L.x, L.y + L.h], w: [L.x, L.y + L.h / 2],
+          };
+          const cursors = { nw: 'nwse-resize', se: 'nwse-resize', ne: 'nesw-resize', sw: 'nesw-resize', n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize' };
+          for (const dir in pts) {
+            const h = svgEl('rect', { class: 'mte-handle', x: pts[dir][0] - HS, y: pts[dir][1] - HS, width: H, height: H, 'data-dir': dir });
+            h.style.cursor = cursors[dir];
+            h.setAttribute('pointer-events', 'all');
+            gOverlay.appendChild(h);
+          }
+        }
+      }
+    },
+    /* ---- 连线模式（组件面板「箭头/实线/虚线」点击进入）：所有节点显示 8 锚点，
+            点选起点锚点（节点高亮）→ 点选终点锚点 → 建边；Esc/点空白取消，不保存 ---- */
+    beginLink(kind) {
+      this.linkPending = { kind, from: null };
+      if (this.svg) {
+        this.svg.classList.add('linking');
+        this.drawOverlay();
+      }
+      toastMte('连线模式：点击任意节点的锚点作为起点（Esc 取消）');
+    },
+    cancelLink() {
+      this.linkPending = null;
+      if (this.svg) {
+        this.svg.classList.remove('linking');
+        this.drawOverlay();
+      }
+    },
+    /* 命中测试：所有非 group 节点的 8 锚点中，取距 pt 最近且在阈值内者（阈值≈12 屏幕像素） */
+    hitAnchor(pt, excludeId) {
+      const d = D();
+      const th = 12 / Math.max(state.scale, 0.05);
+      let best = null, bd = Infinity;
+      for (const n of d.nodes) {
+        if (n.type === 'group' || n.id === excludeId) continue;
+        const L = d.layout.node[n.id];
+        if (!L) continue;
+        const pts = nodeAnchors(L);
+        for (let a = 0; a < 8; a++) {
+          const dist = (pts[a].x - pt.x) ** 2 + (pts[a].y - pt.y) ** 2;
+          if (dist < bd) { bd = dist; best = { id: n.id, a, x: pts[a].x, y: pts[a].y }; }
+        }
+      }
+      return (best && bd <= th * th) ? best : null;
+    },
+    /* 命中测试：已选中边的首/尾编辑点（无条件判定两端——mid-only 的锚点缺失不得阻断） */
+    hitEdgeEnd(pt) {
+      if (!api.selectedEdge) return null;
+      const d = D();
+      const e = d.edges.find(x => x.id === api.selectedEdge);
+      if (!e) return null;
+      const geo = edgeGeom(e);
+      if (!geo) return null;
+      const th = 9 / Math.max(state.scale, 0.05);
+      if (Math.abs(geo.p1.x - pt.x) <= th && Math.abs(geo.p1.y - pt.y) <= th) return { id: e.id, end: 'a' };
+      if (Math.abs(geo.p2.x - pt.x) <= th && Math.abs(geo.p2.y - pt.y) <= th) return { id: e.id, end: 'b' };
+      return null;
+    },
+    /* 命中测试：节点本体（非 group；用于锚点未命中时的兜底吸附） */
+    hitNodeAt(pt) {
+      const d = D();
+      for (let i = d.nodes.length - 1; i >= 0; i--) {
+        const n = d.nodes[i];
+        if (n.type === 'group') continue;
+        const L = d.layout.node[n.id];
+        if (L && pt.x >= L.x - 6 && pt.x <= L.x + L.w + 6 && pt.y >= L.y - 6 && pt.y <= L.y + L.h + 6) return n.id;
+      }
+      return null;
+    },
+    /* 命中测试：标注组件（label；点选优先级最高，含 4px 容差） */
+    hitLabelAt(pt) {
+      const d = D();
+      for (let i = d.nodes.length - 1; i >= 0; i--) {
+        const n = d.nodes[i];
+        if (n.type !== 'label') continue;
+        const L = d.layout.node[n.id];
+        if (L && pt.x >= L.x - 4 && pt.x <= L.x + L.w + 4 && pt.y >= L.y - 4 && pt.y <= L.y + L.h + 4) return n.id;
+      }
+      return null;
+    },
+    /* 连线/端点重选的统一命中：优先锚点（12px 内），否则节点任意位置 → 吸附最近锚点 */
+    hitAnchorOrNode(pt) {
+      const hit = this.hitAnchor(pt, null);
+      if (hit) return hit;
+      const nid = this.hitNodeAt(pt);
+      if (!nid) return null;
+      const L = D().layout.node[nid];
+      return { id: nid, a: nearestAnchor(L, pt) };
+    },
+    /* ---- 交互 ---- */
+    startMoveDrag(ev, id, ids) {
+      const c = this.screenToCanvas(ev.clientX, ev.clientY);
+      const origins = new Map();
+      for (const nid of ids) {
+        const L = D().layout.node[nid];
+        if (L) origins.set(nid, { x: L.x, y: L.y });
+      }
+      drag = { mode: ids.length > 1 ? 'multi-move' : 'move', id, sx: c.x, sy: c.y, origins, moved: false };
+      try { ev.target.setPointerCapture(ev.pointerId); } catch (_) {}
+      ev.stopPropagation();
+      return true;
+    },
+    bindEvents(svg) {
+      const onHandleDown = (ev) => {
+        const h = ev.target.closest && ev.target.closest('.mte-handle');
+        if (!h || !(api.selectedIds && api.selectedIds.size === 1)) return false;
+        const dir = h.dataset.dir;
+        const id = api.selectedId;
+        const c = this.screenToCanvas(ev.clientX, ev.clientY);
+        drag = { mode: 'resize', id, dir, sx: c.x, sy: c.y, orig: { ...D().layout.node[id] }, moved: false };
+        try { h.setPointerCapture(ev.pointerId); } catch (_) {}
+        ev.stopPropagation();
+        return true;
+      };
+      const onNodeDown = (ev) => {
+        const g = ev.target.closest && ev.target.closest('.mte-node');
+        if (!g || !g.dataset.id) return false;
+        const id = g.dataset.id;
+        if (textEd.activeId && textEd.activeId !== id) textEd.confirm();
+        if (ev.ctrlKey || ev.metaKey) {                   // Ctrl+点击：加入/移出多选
+          toggleSelect(id);
+          if (!api.selectedIds.has(id)) { ev.stopPropagation(); return true; }   // 减选后不拖动
+          return this.startMoveDrag(ev, id, [...api.selectedIds]);
+        }
+        if (api.selectedIds.size > 1 && api.selectedIds.has(id))   // 多选集内拖动 = 整组移动
+          return this.startMoveDrag(ev, id, [...api.selectedIds]);
+        selectOnly([id]);
+        return this.startMoveDrag(ev, id, [id]);
+      };
+      svg.addEventListener('pointerdown', (ev) => {
+        if (ev.button !== 0) return;
+        /* 连线模式：优先锚点精确命中，点节点任意位置吸附最近锚点；点空白不退出（Esc 取消） */
+        if (this.linkPending) {
+          ev.stopPropagation();
+          const c = this.screenToCanvas(ev.clientX, ev.clientY);
+          const hit = this.hitAnchorOrNode(c);
+          if (!hit) return;                            // 点空白/未命中：继续等待
+          const lp = this.linkPending;
+          if (!lp.from) {
+            lp.from = { id: hit.id, a: hit.a };
+            toastMte('起点已定（' + hit.id + '）：点击终点锚点完成连线');
+            this.drawOverlay();
+          } else if (lp.from.id === hit.id && lp.from.a === hit.a) {
+            /* 同一锚点：忽略 */
+          } else {
+            const f = lp.from, kind = lp.kind;
+            this.cancelLink();
+            commands.exec('edge.add', { from: f.id, to: hit.id, kind, anchors: { a: f.a, b: hit.a } });
+          }
+          return;
+        }
+        /* 边端点重选模式（改动5）：点锚点或节点任意位置 → 修改端点（可换节点） */
+        if (this.edgeEndPending) {
+          ev.stopPropagation();
+          const c = this.screenToCanvas(ev.clientX, ev.clientY);
+          const hit = this.hitAnchorOrNode(c);
+          if (!hit) return;
+          const ep = this.edgeEndPending;
+          this.edgeEndPending = null;
+          this.drawOverlay();
+          commands.exec('edge.anchor', { id: ep.id, end: ep.end, v: hit.a, nodeId: hit.id });
+          return;
+        }
+        /* 已选中边的编辑点：中点（拖动弯折）/ 首尾（点击改端点） */
+        if (api.selectedEdge && !ev.ctrlKey && !ev.metaKey) {
+          const midHit = this.hitEdgeMid(ev);
+          if (midHit) {
+            ev.stopPropagation();
+            this.beginEdgeMidDrag(ev, midHit);
+            return;
+          }
+          const endHit = this.hitEdgeEnd(this.screenToCanvas(ev.clientX, ev.clientY));
+          if (endHit) {
+            ev.stopPropagation();
+            selectOnly([]);
+            this.edgeEndPending = endHit;
+            toastMte('点击目标节点的新锚点，替换连线' + (endHit.end === 'a' ? '起点' : '终点') + '（Esc 取消）');
+            this.drawOverlay();
+            return;
+          }
+        }
+        if (onHandleDown.call(this, ev)) return;
+        /* 标注点选优先级最高：点击落在任一标注包围盒内 → 强制选中它（先于其他节点/边） */
+        if (!ev.ctrlKey && !ev.metaKey) {
+          const c0 = this.screenToCanvas(ev.clientX, ev.clientY);
+          const lid = this.hitLabelAt(c0);
+          if (lid) {
+            ev.stopPropagation();
+            if (textEd.activeId && textEd.activeId !== lid) textEd.confirm();
+            selectOnly([lid]);
+            const Ll = D().layout.node[lid];
+            drag = { mode: 'move', id: lid, sx: c0.x, sy: c0.y, origins: new Map([[lid, { x: Ll.x, y: Ll.y }]]), moved: false };
+            try { ev.target.setPointerCapture(ev.pointerId); } catch (_) {}
+            return;
+          }
+        }
+        if (onNodeDown.call(this, ev)) return;
+        /* 点击边：选中并显示三编辑点（首/中/尾） */
+        const eg = ev.target.closest && ev.target.closest('.mte-edge');
+        if (eg && eg.dataset.id) {
+          ev.stopPropagation();
+          selectOnly([]);
+          selectEdge(eg.dataset.id);
+          return;
+        }
+        if (ev.target === svg) {
+          if (ev.ctrlKey || ev.metaKey) {                 // Ctrl+空白拖拽 = 框选（阻止视口平移）
+            ev.stopPropagation();
+            const c = this.screenToCanvas(ev.clientX, ev.clientY);
+            drag = { mode: 'marquee', start: c, cur: c, moved: false };
+            this.drawOverlay();
+            return;
+          }
+          selectOnly([]);                                 // 空白：取消选中（含边）
+          selectEdge(null);
+        }
+      });
+      svg.addEventListener('dblclick', (ev) => {
+        const g = ev.target.closest && ev.target.closest('.mte-node');
+        if (g && g.dataset.id) { ev.stopPropagation(); textEd.open(g.dataset.id); }
+      });
+    },
+    onDragMove(ev) {
+      if (!drag) return;
+      const c = this.screenToCanvas(ev.clientX, ev.clientY);
+      const d = D();
+      if (drag.mode === 'edge-mid') {                 // 拖弯折点：实时重画曲线
+        edgeLiveMid = { id: drag.id, x: c.x, y: c.y };
+        drag.moved = true;
+        const e = d.edges.find(x => x.id === drag.id);
+        if (e) this.liveEdge(e);
+        return;
+      }
+      if (drag.mode === 'marquee') {
+        drag.cur = c; drag.moved = true;
+        this.drawOverlay();
+        return;
+      }
+      if (drag.mode === 'move' || drag.mode === 'multi-move') {
+        const dx = c.x - drag.sx, dy = c.y - drag.sy;
+        for (const [nid, o] of drag.origins) {
+          const nx = o.x + dx, ny = o.y + dy;
+          const L0 = D().layout.node[nid];
+          if (!L0) continue;
+          liveBoxes.set(nid, { x: nx, y: ny, w: L0.w, h: L0.h });
+          const g = this.nodeG(nid);
+          if (g) g.setAttribute('transform', `translate(${nx},${ny})`);
+          for (const e of model.edgesOf(d, nid)) this.liveEdge(e);
+        }
+        drag.moved = true;
+      } else {
+        const o = drag.orig;
+        let { x, y, w, h } = o;
+        const dx = c.x - drag.sx, dy = c.y - drag.sy;
+        if (drag.dir.includes('e')) w = o.w + dx;
+        if (drag.dir.includes('s')) h = o.h + dy;
+        if (drag.dir.includes('w')) { x = o.x + Math.min(dx, o.w - 28); w = o.w - (x - o.x); }
+        if (drag.dir.includes('n')) { y = o.y + Math.min(dy, o.h - 28); h = o.h - (y - o.y); }
+        w = Math.max(28, w); h = Math.max(28, h);
+        liveBoxes.set(drag.id, { x, y, w, h });
+        const n = model.nodeOf(d, drag.id);
+        const g = this.nodeG(drag.id);
+        if (n && g) { const ng = drawNode(n, liveBoxes.get(drag.id)); g.replaceWith(ng); }
+        for (const e of model.edgesOf(d, drag.id)) this.liveEdge(e);
+        drag.moved = true;
+      }
+      this.drawOverlay();
+    },
+    liveEdge(e) {
+      if (!gEdges) return;
+      const og = gEdges.querySelector(`g[data-id="${CSS.escape(e.id)}"]`);
+      const ng = drawEdge(e, liveBoxes);
+      if (ng) { if (og) og.replaceWith(ng); else gEdges.appendChild(ng); }
+    },
+    onDragEnd() {
+      if (!drag) return;
+      const { mode, moved } = drag;
+      if (mode === 'edge-mid') {                      // 弯折点落命令（一条 undo）
+        const { id } = drag;
+        drag = null;
+        if (moved && edgeLiveMid && edgeLiveMid.id === id) {
+          const { x, y } = edgeLiveMid;
+          edgeLiveMid = null;
+          commands.exec('edge.mid', { id, x, y });
+        } else { edgeLiveMid = null; }
+        return;
+      }
+      if (mode === 'marquee') {
+        const x1 = Math.min(drag.start.x, drag.cur.x), y1 = Math.min(drag.start.y, drag.cur.y);
+        const x2 = Math.max(drag.start.x, drag.cur.x), y2 = Math.max(drag.start.y, drag.cur.y);
+        drag = null;
+        if (moved) {                                     // 命中 = 节点包围盒与框相交
+          const hits = D().nodes.filter(n => {
+            const L = D().layout.node[n.id];
+            return L && L.x < x2 && L.x + L.w > x1 && L.y < y2 && L.y + L.h > y1;
+          }).map(n => n.id);
+          selectOnly(hits);
+        }
+        this.drawOverlay();
+        return;
+      }
+      if (mode === 'move' || mode === 'multi-move') {
+        const { origins } = drag;
+        drag = null;
+        if (moved && origins.size) {
+          const moves = [];
+          for (const [nid, o] of origins) {
+            const b = liveBoxes.get(nid);
+            if (b && (Math.abs(b.x - o.x) > .01 || Math.abs(b.y - o.y) > .01))
+              moves.push({ id: nid, x: b.x, y: b.y });
+          }
+          liveBoxes.clear();
+          if (moves.length === 1) commands.exec('node.move', moves[0]);
+          else if (moves.length > 1) commands.exec('node.moveMany', { moves });   // 一条命令整组 undo
+        } else {
+          liveBoxes.clear();                         // moved=false：DOM 未动，不重建（保护 dblclick）
+        }
+        return;
+      }
+      /* resize（单选手柄） */
+      const { id, orig } = drag;
+      drag = null;
+      if (moved && liveBoxes.get(id)) {
+        const b = liveBoxes.get(id);
+        const p = { id, w: b.w, h: b.h };
+        if (Math.abs(b.x - orig.x) > .01) p.x = b.x;
+        if (Math.abs(b.y - orig.y) > .01) p.y = b.y;
+        liveBoxes.clear();
+        commands.exec('node.resize', p);
+      } else {
+        liveBoxes.clear();
+        /* moved=false：DOM 未被改动，无需回弹重建——此处重建节点会让浏览器
+           即将派发的 dblclick 落在已 detach 的旧元素上，双击改文字失效 */
+      }
+    },
+  };
+  window.addEventListener('pointermove', ev => canvas.onDragMove(ev));
+  window.addEventListener('pointerup', () => canvas.onDragEnd());
+  window.addEventListener('pointercancel', () => canvas.onDragEnd());
+
+  /* ---- 节点/边绘制（纯 SVG rect/text/path，禁 foreignObject——9.8-3） ---- */
+  function nodeStyleOf(n) {
+    const st = n.style || {};
+    const isGroup = n.type === 'group';
+    const isLabel = n.type === 'label';
+    return {
+      bg: st.bg || (isGroup ? THEME.groupBg : THEME.nodeBg),
+      stroke: st.stroke || (isGroup ? THEME.groupStroke : THEME.nodeStroke),
+      sw: st.strokeWidth > 0 ? st.strokeWidth : (isGroup ? 1.4 : THEME.nodeStrokeW),
+      color: st.color || THEME.nodeColor,
+      fs: st.fontSize > 0 ? st.fontSize : 14,
+      fam: st.fontFamily || '"Segoe UI","Microsoft YaHei",sans-serif',
+      dash: st.dashed ? '6 4' : null,
+      align: st.align || 'center',
+      /* 节点级背景不透明度（外观组写入 style.bgOpacity；分组/标注同样适用；序列化 ↔ fill-opacity） */
+      bgOp: (st.bgOpacity != null && st.bgOpacity < 1) ? st.bgOpacity : null,
+    };
+  }
+  function drawNode(n, LOverride) {
+    const L = LOverride || D().layout.node[n.id] || { x: 0, y: 0, w: 160, h: 60 };
+    const st = nodeStyleOf(n);
+    const dashAttr = st.dash ? { 'stroke-dasharray': st.dash } : {};
+    const fillOp = (st.bgOp != null && st.bgOp < 1) ? { 'fill-opacity': st.bgOp } : {};
+    const g = svgEl('g', { class: 'mte-node' + (n.type === 'label' ? ' mte-label' : ''), 'data-id': n.id, transform: `translate(${L.x},${L.y})` });
+    const w = L.w, h = L.h;
+    switch (n.type) {
+      case 'label':                                  // 标注：无边框、背景透明，仅文字（线上标注用）
+        break;
+      case 'diamond':
+        g.appendChild(svgEl('path', { d: `M ${w / 2},0 L ${w},${h / 2} L ${w / 2},${h} L 0,${h / 2} Z`, fill: st.bg, stroke: st.stroke, 'stroke-width': st.sw, ...dashAttr, ...fillOp }));
+        break;
+      case 'circle':
+        g.appendChild(svgEl('ellipse', { cx: w / 2, cy: h / 2, rx: w / 2, ry: h / 2, fill: st.bg, stroke: st.stroke, 'stroke-width': st.sw, ...dashAttr, ...fillOp }));
+        break;
+      case 'cylinder': {
+        const e = Math.min(14, h / 4);
+        g.appendChild(svgEl('path', { d: `M 0,${e} L 0,${h - e} A ${w / 2},${e} 0 0 0 ${w},${h - e} L ${w},${e}`, fill: st.bg, stroke: 'none', ...fillOp }));
+        g.appendChild(svgEl('path', { d: `M 0,${h - e} A ${w / 2},${e} 0 0 0 ${w},${h - e}`, fill: 'none', stroke: st.stroke, 'stroke-width': st.sw, ...dashAttr }));
+        g.appendChild(svgEl('ellipse', { cx: w / 2, cy: e, rx: w / 2, ry: e, fill: st.bg, stroke: st.stroke, 'stroke-width': st.sw, ...dashAttr, ...fillOp }));
+        break;
+      }
+      case 'parallelogram': {
+        const sk = Math.min(26, w * 0.18);
+        g.appendChild(svgEl('path', { d: `M ${sk},0 L ${w},0 L ${w - sk},${h} L 0,${h} Z`, fill: st.bg, stroke: st.stroke, 'stroke-width': st.sw, ...dashAttr, ...fillOp }));
+        break;
+      }
+      case 'group': {
+        g.appendChild(svgEl('rect', { x: 0, y: 0, width: w, height: h, rx: 8, fill: st.bg, stroke: st.stroke, 'stroke-width': st.sw, ...dashAttr, ...fillOp }));
+        /* 标题放底部左下（mermaid cluster 标题同位），避免盖住成员节点 */
+        const tt = svgEl('text', { x: 12, y: h - 12, 'font-size': 13, 'font-family': st.fam, fill: st.color, 'text-anchor': 'start', 'font-weight': 600 });
+        tt.textContent = n.text || n.id;
+        g.appendChild(tt);
+        return g;                                    // group 无居中正文
+      }
+      default: {                                     // rect / round / stadium
+        let rx = 0;
+        if (n.type === 'stadium') rx = h / 2;
+        else if (n.type === 'round') rx = Math.min((n.style && n.style.radius > 0) ? n.style.radius : 15, h / 2);
+        else if (n.style && n.style.radius > 0) rx = Math.min(n.style.radius, h / 2);
+        g.appendChild(svgEl('rect', { x: 0, y: 0, width: w, height: h, rx, fill: st.bg, stroke: st.stroke, 'stroke-width': st.sw, ...dashAttr, ...fillOp }));
+      }
+    }
+    /* 居中多行文本（tspan 拆行） */
+    const lines = String(n.text ?? '').split('\n');
+    if (lines.length && n.text !== '') {
+      const lh = st.fs * 1.3;
+      const anchor = st.align === 'left' ? 'start' : st.align === 'right' ? 'end' : 'middle';
+      const x0 = st.align === 'left' ? 10 : st.align === 'right' ? w - 10 : w / 2;
+      const y0 = h / 2 - (lines.length - 1) * lh / 2 + st.fs * 0.35;
+      const t = svgEl('text', {
+        'text-anchor': anchor, 'font-size': st.fs, 'font-family': st.fam, fill: st.color,
+        ...(n.style && n.style.bold ? { 'font-weight': 'bold' } : {}),
+        ...(n.style && n.style.italic ? { 'font-style': 'italic' } : {}),
+      });
+      lines.forEach((ln, i) => {
+        const ts = svgEl('tspan', { x: x0, y: y0 + i * lh });
+        ts.textContent = ln;
+        t.appendChild(ts);
+      });
+      g.appendChild(t);
+    }
+    return g;
+  }
+  function clipToBox(L, c, to) {                     // 中心连线与包围盒交点
+    const dx = to.x - c.x, dy = to.y - c.y;
+    if (!dx && !dy) return c;
+    let t = Infinity;
+    if (dx > 0) t = Math.min(t, (L.x + L.w - c.x) / dx);
+    if (dx < 0) t = Math.min(t, (L.x - c.x) / dx);
+    if (dy > 0) t = Math.min(t, (L.y + L.h - c.y) / dy);
+    if (dy < 0) t = Math.min(t, (L.y - c.y) / dy);
+    return { x: c.x + dx * t, y: c.y + dy * t };
+  }
+  /* 节点 8 锚点（0左上 1中上 2右上 3左中 4右中 5左下 6中下 7右下）与最近锚点吸附 */
+  function nodeAnchors(L) {
+    return [
+      { x: L.x, y: L.y }, { x: L.x + L.w / 2, y: L.y }, { x: L.x + L.w, y: L.y },
+      { x: L.x, y: L.y + L.h / 2 }, { x: L.x + L.w, y: L.y + L.h / 2 },
+      { x: L.x, y: L.y + L.h }, { x: L.x + L.w / 2, y: L.y + L.h }, { x: L.x + L.w, y: L.y + L.h },
+    ];
+  }
+  function nearestAnchor(L, pt) {
+    const pts = nodeAnchors(L);
+    let best = 0, bd = Infinity;
+    for (let i = 0; i < 8; i++) {
+      const d = (pts[i].x - pt.x) ** 2 + (pts[i].y - pt.y) ** 2;
+      if (d < bd) { bd = d; best = i; }
+    }
+    return best;
+  }
+  function edgeGeom(e, live) {
+    const d = D();
+    const La = (live && live.get && live.get(e.from)) || d.layout.node[e.from];
+    const Lb = (live && live.get && live.get(e.to)) || d.layout.node[e.to];
+    if (!La || !Lb) return null;
+    /* 有吸附锚点（连线组件创建）→ 端点固定在锚点上；否则中心连线裁剪到包围盒 */
+    const anch = d.layout.edge && d.layout.edge[e.id];
+    if (anch && anch.a != null && anch.b != null) {
+      return { p1: nodeAnchors(La)[anch.a], p2: nodeAnchors(Lb)[anch.b] };
+    }
+    const ca = { x: La.x + La.w / 2, y: La.y + La.h / 2 }, cb = { x: Lb.x + Lb.w / 2, y: Lb.y + Lb.h / 2 };
+    return { p1: clipToBox(La, ca, cb), p2: clipToBox(Lb, cb, ca) };
+  }
+  function drawEdge(e, live) {
+    const geo = edgeGeom(e, live);
+    if (!geo) return null;
+    const { p1, p2 } = geo;
+    const d0 = D();
+    /* 弯折点：layout.edge[id].mid（拖中点设置）；曲线中点恰为 mid（二次贝塞尔反解控制点） */
+    const mid = (edgeLiveMid && edgeLiveMid.id === e.id) ? edgeLiveMid :
+      (d0.layout.edge && d0.layout.edge[e.id] && d0.layout.edge[e.id].mid) || null;
+    let dPath, lx, ly;
+    if (mid) {
+      const c = { x: 2 * mid.x - (p1.x + p2.x) / 2, y: 2 * mid.y - (p1.y + p2.y) / 2 };
+      dPath = `M ${p1.x},${p1.y} Q ${c.x},${c.y} ${p2.x},${p2.y}`;
+      lx = mid.x; ly = mid.y;
+    } else {
+      const dx = p2.x - p1.x, dy = p2.y - p1.y;
+      const horiz = Math.abs(dx) >= Math.abs(dy);
+      const c1 = horiz ? { x: p1.x + dx / 2, y: p1.y } : { x: p1.x, y: p1.y + dy / 2 };
+      const c2 = horiz ? { x: p2.x - dx / 2, y: p2.y } : { x: p2.x, y: p2.y - dy / 2 };
+      dPath = `M ${p1.x},${p1.y} C ${c1.x},${c1.y} ${c2.x},${c2.y} ${p2.x},${p2.y}`;
+      lx = (p1.x + 3 * c1.x + 3 * c2.x + p2.x) / 8;
+      ly = (p1.y + 3 * c1.y + 3 * c2.y + p2.y) / 8;
+    }
+    const g = svgEl('g', { class: 'mte-edge', 'data-id': e.id });
+    /* 命中热区：透明宽描边（点击选中/显示编辑点）；可见 path 本身不接事件 */
+    g.appendChild(svgEl('path', { d: dPath, fill: 'none', stroke: 'transparent', 'stroke-width': 14, 'pointer-events': 'stroke', class: 'mte-edgehit' }));
+    g.appendChild(svgEl('path', { d: dPath, fill: 'none', stroke: THEME.edge, 'stroke-width': e.kind === 'thick' ? 2.6 : 1.6,
+      'pointer-events': 'none',
+      ...(e.kind === 'dotted' ? { 'stroke-dasharray': '5 5' } : {}),
+      ...(e.kind !== 'line' ? { 'marker-end': 'url(#mteArrow)' } : {}) }));
+    if (e.label) {
+      const t = svgEl('text', { x: lx, y: ly - 6, 'text-anchor': 'middle', 'font-size': THEME.edgeLabelSize, 'font-family': '"Segoe UI","Microsoft YaHei",sans-serif', fill: THEME.edgeLabel });
+      t.textContent = e.label;
+      g.appendChild(t);
+    }
+    return g;
+  }
+
+  /* ---- 选中边 + 中点拖动（改动5） ---- */
+  let edgeLiveMid = null;                            // 拖动中的弯折点 {id,x,y}
+  function selectEdge(id) {
+    api.selectedEdge = (id && D().edges.some(x => x.id === id)) ? id : null;
+    canvas.edgeEndPending = null;
+    if (canvas.svg) canvas.drawOverlay();
+  }
+
+  /* ---- 选中（单选 + Ctrl 多选）：selectedIds 为全集，selectedId 为「主选中」（样式回填/文本编辑/resize 依据） ---- */
+  function selectOnly(ids) {
+    api.selectedIds = new Set((ids || []).filter(id => model.nodeOf(D(), id)));
+    api.selectedId = api.selectedIds.size ? [...api.selectedIds][api.selectedIds.size - 1] : null;
+    if (canvas.svg) canvas.drawOverlay();
+    if (panel.inited) panel.syncSelection();
+  }
+  function select(id) { selectOnly(id ? [id] : []); }
+  function toggleSelect(id) {
+    const s = new Set(api.selectedIds);
+    if (s.has(id)) s.delete(id); else s.add(id);
+    selectOnly([...s]);
+  }
+  /* 外观面板「组件背景透明度」已改为节点级样式（编辑栏外观组写入 style.bgOpacity） */
+
+  /* ---- 画布内文本编辑浮层（9.3：确认才入命令栈） ---- */
+  const textEd = {
+    activeId: null, canceling: false,
+    ta: null, box: null,
+    open(id) {
+      const d = D();
+      const n = model.nodeOf(d, id), L = d.layout.node[id];
+      if (!n || !L || n.type === 'group') return;
+      this.ta = this.ta || document.querySelector('#mteText textarea');
+      this.box = $('mteText');
+      this.activeId = id;
+      const st = nodeStyleOf(n);
+      const ta = this.ta;
+      ta.value = n.text;
+      ta.style.fontFamily = st.fam;
+      ta.style.fontSize = (st.fs * state.scale) + 'px';
+      ta.style.fontWeight = (n.style && n.style.bold) ? 'bold' : 'normal';
+      ta.style.fontStyle = (n.style && n.style.italic) ? 'italic' : 'normal';
+      ta.style.color = st.color;
+      ta.style.background = (n.style && n.style.bg) ? n.style.bg : 'rgba(10,14,26,.35)';
+      ta.style.textAlign = st.align;
+      const el = this.box;
+      el.style.left = (state.tx + L.x * state.scale) + 'px';
+      el.style.top = (state.ty + L.y * state.scale) + 'px';
+      el.style.width = Math.max(60, L.w * state.scale) + 'px';
+      el.style.height = Math.max(32, L.h * state.scale) + 'px';
+      el.style.display = 'block';
+      ta.focus();
+      ta.select();
+    },
+    confirm() {
+      if (!this.activeId) return;
+      const id = this.activeId, val = this.ta.value;
+      this.close();
+      const n = model.nodeOf(D(), id);
+      if (n && n.text !== val) commands.exec('node.text', { id, text: val });
+    },
+    cancel() { this.canceling = true; this.close(); this.canceling = false; },
+    close() {
+      if (this.box) this.box.style.display = 'none';
+      this.activeId = null;
+    },
+  };
+  (function bindTextEd() {
+    const bind = () => {
+      const ta = document.querySelector('#mteText textarea');
+      if (!ta) return;
+      ta.addEventListener('pointerdown', (e) => e.stopPropagation());   // 双保险：不让 stage 的 preventDefault 干扰光标
+      ta.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') { e.stopPropagation(); textEd.cancel(); }
+        else if (e.key === 'Enter' && !e.shiftKey) {                    // Enter 保存（Shift+Enter 换行）
+          e.stopPropagation(); e.preventDefault(); textEd.confirm();
+        }
+      });
+      ta.addEventListener('blur', () => { if (textEd.activeId && !textEd.canceling) textEd.confirm(); });
+    };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bind);
+    else bind();
+  })();
+
+  /* ---------- 9.3/9.6 Editor.panel：模式切换 + 编辑栏（内置分组同样走 registry 注册） ---------- */
+  const FONTS = [
+    ['', '默认'], ['sans-serif', '无衬线'], ['serif', '衬线'], ['monospace', '等宽'],
+    ['Microsoft YaHei', '微软雅黑'], ['SimSun', '宋体'], ['SimHei', '黑体'], ['KaiTi', '楷体'],
+  ];
+  const panel = {
+    inited: false, groupEls: [], syncers: [],
+    init() {
+      if (this.inited) return;
+      this.inited = true;
+      this.renderGroups();
+      this.bindTabs();
+      this.bindHeader();
+      this.bindKeys();
+    },
+    /* 工具：分组容器 / 控件行 */
+    mkGroup(root, def) {
+      const eg = document.createElement('div');
+      eg.className = 'eg' + (def.open ? ' open' : '');
+      eg.dataset.gid = def.id;
+      eg.dataset.needsel = def.needsSel ? '1' : '';
+      const h = document.createElement('div');
+      h.className = 'eg-h'; h.textContent = def.title;
+      const b = document.createElement('div');
+      b.className = 'eg-b';
+      h.addEventListener('click', () => eg.classList.toggle('open'));
+      eg.append(h, b);
+      root.appendChild(eg);
+      this.groupEls.push(eg);
+      return b;
+    },
+    row(parent, label) {
+      const r = document.createElement('div');
+      r.className = 'eg-row';
+      if (label != null) {
+        const lb = document.createElement('label');
+        lb.textContent = label;
+        r.appendChild(lb);
+      }
+      parent.appendChild(r);
+      return r;
+    },
+    numInput(r, min, max, step, oncommit) {
+      const inp = document.createElement('input');
+      inp.type = 'number'; inp.min = min; inp.max = max; inp.step = step || 1;
+      inp.addEventListener('change', () => oncommit(inp.value));
+      r.appendChild(inp);
+      return inp;
+    },
+    syncer(fn) { this.syncers.push(fn); },
+    renderGroups() {
+      const root = $('mtePanelRoot');
+      root.innerHTML = '';
+      this.groupEls = []; this.syncers = []; this.selRows = [];
+      for (const def of registry.groups) {
+        const body = this.mkGroup(root, def);
+        try { def.build.call(this, body); } catch (e) { console.error('[mte] 分组渲染失败', def.id, e); }
+      }
+    },
+    bindTabs() {
+      const tabs = $('paneTabs');
+      const left = document.querySelector('.pane.left');
+      tabs.addEventListener('click', (e) => {
+        const btn = e.target.closest('.mte-tab');
+        if (!btn) return;
+        const tab = btn.dataset.tab;
+        if (tab === 'edit' && !api.active) {           // 「编辑」Tab = 编辑模式唯一入口
+          enter().then(r => { if (!r.ok) toastMte(r.error || '无法进入编辑', 'err'); });
+          return;                                      // 进入成功后由 setModeUI 切 Tab
+        }
+        if (tab === 'code' && api.active) { exit(); return; }   // 「源码」Tab = 退出编辑
+        left.dataset.tab = tab;
+        tabs.querySelectorAll('.mte-tab').forEach(x => x.classList.toggle('active', x === btn));
+      });
+    },
+    bindHeader() {
+      $('btnUndo').addEventListener('click', () => history.undo());
+      $('btnRedo').addEventListener('click', () => history.redo());
+      $('btnSaveMte').addEventListener('click', saveMte);
+      $('btnImportMte').addEventListener('click', () => $('mteFile').click());
+      $('mteFile').addEventListener('change', (e) => {
+        const f = e.target.files && e.target.files[0];
+        e.target.value = '';
+        if (!f) return;
+        const fr = new FileReader();
+        fr.onload = () => restoreMte(fr.result).catch(err => toastMte('导入失败：' + err.message, 'err'));
+        fr.readAsText(f);
+      });
+    },
+    bindKeys() {
+      document.addEventListener('keydown', (e) => {
+        if (!api.active) return;
+        if (e.key === 'Escape') {
+          if (canvas.linkPending) { canvas.cancelLink(); toastMte('已取消连线'); return; }
+          if (canvas.edgeEndPending) { canvas.edgeEndPending = null; canvas.drawOverlay(); toastMte('已取消端点修改'); return; }
+          textEd.cancel(); selectEdge(null); selectOnly([]); return;
+        }
+        const tag = (e.target && e.target.tagName) || '';
+        if (/^(INPUT|TEXTAREA|SELECT)$/.test(tag)) return;
+        if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z') { e.preventDefault(); history.undo(); }
+        else if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) { e.preventDefault(); history.redo(); }
+        else if ((e.ctrlKey || e.metaKey) && e.altKey && e.key.toLowerCase() === 's') { e.preventDefault(); saveMte(); }   // 保存编辑文档
+        else if ((e.key === 'Delete' || e.key === 'Backspace') && api.selectedIds.size) {
+          e.preventDefault();
+          const ids = [...api.selectedIds];
+          if (ids.length === 1) commands.exec('node.delete', { id: ids[0] });
+          else commands.exec('nodes.delete', { ids });
+          selectOnly([]);
+        }
+        else if ((e.key === 'Delete' || e.key === 'Backspace') && api.selectedEdge) {   // 选中边：Delete 删边
+          e.preventDefault();
+          commands.exec('edge.delete', { id: api.selectedEdge });
+          selectEdge(null);
+        }
+        else if (e.key === 'Enter' && api.selectedIds.size === 1) { e.preventDefault(); textEd.open(api.selectedId); }
+      });
+    },
+    setModeUI(edit) {
+      document.body.classList.toggle('edit-mode', edit);
+      const left = document.querySelector('.pane.left');
+      const tabs = $('paneTabs');
+      left.dataset.tab = edit ? 'edit' : 'code';
+      tabs.querySelectorAll('.mte-tab').forEach(x => x.classList.toggle('active', (x.dataset.tab === 'edit') === edit));
+      this.syncSelection();
+      api.onHistory();
+    },
+    syncSelection() {
+      const count = api.selectedIds ? api.selectedIds.size : 0;
+      const has = count > 0, multi = count > 1;
+      for (const eg of this.groupEls) {
+        const dis = (!!eg.dataset.needsel && !has) || (eg.dataset.gid === 'layout' && multi);
+        eg.classList.toggle('disabled', dis);
+      }
+      /* 行级禁用（如外观组的边框宽/圆角/虚线需选中节点） */
+      for (const r of (this.selRows || [])) {
+        r.style.opacity = has ? '' : '.38';
+        r.style.pointerEvents = has ? '' : 'none';
+      }
+      for (const s of this.syncers) { try { s(); } catch (_) {} }
+    },
+    showWarnings(list) {
+      const el = $('mteWarnings');
+      const items = [...new Set(list || [])].slice(0, 8);
+      if (!items.length) { el.style.display = 'none'; el.textContent = ''; return; }
+      el.textContent = '⚠ ' + items.join('\n⚠ ');
+      el.style.display = 'block';
+    },
+  };
+  function selNode() { return api.selectedId ? model.nodeOf(D(), api.selectedId) : null; }
+  /* 组件背景透明度（编辑栏「外观」分组）：节点级样式，作用于选中组件（序列化 ↔ fill-opacity） */
+  function setGlobalBgOpacity(pct) {
+    execStyle({ bgOpacity: pct / 100 });
+  }
+  function execStyle(patch) {
+    const ids = (api.selectedIds && api.selectedIds.size) ? [...api.selectedIds] : [];
+    if (!ids.length && api.selectedId) ids.push(api.selectedId);
+    for (const id of ids) commands.exec('node.style', { id, patch });   // 多选 = 逐节点同 patch（各自可 undo）
+  }
+  function toHex(c) {
+    if (!c) return '#263048';
+    if (/^#[0-9a-f]{6}$/i.test(c)) return c;
+    if (/^#[0-9a-f]{3}$/i.test(c)) return '#' + [...c.slice(1)].map(x => x + x).join('');
+    const m = /rgba?\((\d+)[,\s]+(\d+)[,\s]+(\d+)/.exec(c);
+    if (m) return '#' + [m[1], m[2], m[3]].map(x => (+x).toString(16).padStart(2, '0')).join('');
+    return '#263048';
+  }
+
+  /* 内置五分组（§9.6 表格）：组件 / 字体 / 颜色 / 外观 / 布局——声明式注册，UI 自动绑定 Command */
+  registry.registerGroup({
+    id: 'components', title: '组件', order: 1, needsSel: false, open: true,
+    build(body) {
+      const grid = document.createElement('div');
+      grid.className = 'comp-grid';
+      for (const c of registry.components) {
+        const card = document.createElement('div');
+        card.className = 'comp-card';
+        card.innerHTML = c.thumbnail + `<span>${c.label}</span>`;
+        if (c.edgeKind) {                              // 连线组件：点击即进入连线模式（无需拖动）
+          card.title = '点击后：依次点选起点/终点锚点绘制连线，Esc 取消';
+          card.addEventListener('click', () => { if (api.active) canvas.beginLink(c.edgeKind); });
+        } else {
+          card.addEventListener('pointerdown', (ev) => startCompDrag(ev, c));
+        }
+        grid.appendChild(card);
+      }
+      body.appendChild(grid);
+    },
+  });
+  registry.registerGroup({
+    id: 'font', title: '字体', order: 2, needsSel: true, open: true,
+    build(body) {
+      /* 文本内容：直接改选中组件的文字（双击画布节点的等价入口） */
+      const r0 = this.row(body, '文本内容');
+      const txt = document.createElement('input');
+      txt.type = 'text'; txt.spellcheck = false;
+      txt.placeholder = '选中组件的显示文字';
+      const commit = () => {
+        const ids = (api.selectedIds && api.selectedIds.size) ? [...api.selectedIds] : [];
+        for (const id of ids) {
+          const n = model.nodeOf(D(), id);
+          if (n && n.text !== txt.value) commands.exec('node.text', { id, text: txt.value });
+        }
+      };
+      txt.addEventListener('change', commit);
+      txt.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); txt.blur(); } });
+      r0.appendChild(txt);
+      this.syncer(() => {
+        const n = selNode();
+        txt.value = n && api.selectedIds.size === 1 ? n.text : (n ? n.text : '');
+      });
+      const r1 = this.row(body, '字族');
+      const sel = document.createElement('select');
+      for (const [v, t] of FONTS) {
+        const o = document.createElement('option');
+        o.value = v; o.textContent = t;
+        sel.appendChild(o);
+      }
+      sel.addEventListener('change', () => execStyle({ fontFamily: sel.value || null }));
+      r1.appendChild(sel);
+      this.syncer(() => { const n = selNode(); sel.value = (n && n.style.fontFamily) || ''; });
+      const r2 = this.row(body, '字号');
+      const fs = this.numInput(r2, 8, 96, 1, v => execStyle({ fontSize: clamp(parseInt(v) || 14, 8, 96) }));
+      this.syncer(() => { const n = selNode(); fs.value = (n && n.style.fontSize) || 14; });
+      const r3 = this.row(body, '样式');
+      const segB = document.createElement('div'); segB.className = 'seg';
+      const mkToggle = (key, text) => {
+        const btn = document.createElement('button');
+        btn.textContent = text;
+        btn.addEventListener('click', () => {
+          const n = selNode();
+          const on = !(n && n.style[key]);
+          execStyle({ [key]: on ? true : null });
+        });
+        this.syncer(() => { const n = selNode(); btn.classList.toggle('on', !!(n && n.style[key])); });
+        return btn;
+      };
+      segB.append(mkToggle('bold', '粗体'), mkToggle('italic', '斜体'));
+      r3.appendChild(segB);
+      const r4 = this.row(body, '对齐');
+      const segA = document.createElement('div'); segA.className = 'seg';
+      for (const [v, t] of [['left', '左'], ['center', '中'], ['right', '右']]) {
+        const btn = document.createElement('button');
+        btn.textContent = t;
+        btn.dataset.v = v;
+        btn.addEventListener('click', () => execStyle({ align: v === 'center' ? null : v }));
+        segA.appendChild(btn);
+      }
+      this.syncer(() => {
+        const n = selNode();
+        const cur = (n && n.style.align) || 'center';
+        segA.querySelectorAll('button').forEach(x => x.classList.toggle('on', x.dataset.v === cur));
+      });
+      r4.appendChild(segA);
+    },
+  });
+  registry.registerGroup({
+    id: 'color', title: '颜色', order: 3, needsSel: true, open: true,
+    build(body) {
+      const colors = document.createElement('div');
+      colors.className = 'eg-colors';
+      for (const [key, label, fallback] of [
+        ['color', '字体颜色', THEME.nodeColor], ['bg', '背景色', THEME.nodeBg], ['stroke', '边框色', THEME.nodeStroke],
+      ]) {
+        /* 紧凑行式：标签 + 单个当前色块（点击色块 = 唤起原生取色器实时应用） */
+        const slot = document.createElement('div');
+        slot.className = 'eg-color-slot';
+        const lab = document.createElement('div');
+        lab.className = 'swatch-label';
+        lab.textContent = label;
+        const cur = document.createElement('div');
+        cur.className = 'swatch-cur';
+        const inp = document.createElement('input');
+        inp.type = 'color';
+        inp.addEventListener('input', () => execStyle({ [key]: inp.value }));
+        const hex = document.createElement('span');
+        hex.className = 'swatch-hex';
+        cur.append(inp, hex);
+        slot.append(lab, cur);
+        colors.appendChild(slot);
+        this.syncer(() => {
+          const n = selNode();
+          const raw = (n && n.style[key]) || fallback;
+          inp.value = toHex(raw);
+          cur.style.background = raw;
+          hex.textContent = String(raw).toUpperCase();
+        });
+      }
+      body.appendChild(colors);
+    },
+  });
+  registry.registerGroup({
+    id: 'appearance', title: '外观', order: 4, needsSel: false, open: false,
+    build(body) {
+      /* 需要选中节点的行（行级禁用）：透明度现在也是节点级样式，同样需要选中 */
+      this.selRows = this.selRows || [];
+      const r1 = this.row(body, '背景不透明度');
+      r1.title = '选中组件背景的不透明度（10%–100%，分组/标注同样适用，导出 PNG 同步生效）';
+      this.selRows.push(r1);
+      const op = document.createElement('input');
+      op.type = 'number'; op.min = 10; op.max = 100; op.step = 5;
+      op.addEventListener('change', () => setGlobalBgOpacity(clamp(parseInt(op.value) || 100, 10, 100)));
+      r1.appendChild(op);
+      this.syncer(() => {
+        const n = selNode();
+        const v = (n && n.style.bgOpacity != null) ? Math.round(n.style.bgOpacity * 100) : 100;
+        op.value = v;
+      });
+      const r2 = this.row(body, '边框宽');
+      this.selRows.push(r2);
+      const sw = this.numInput(r2, 0, 12, 0.5, v => execStyle({ strokeWidth: clamp(parseFloat(v) || 0, 0, 12) }));
+      this.syncer(() => { const n = selNode(); sw.value = (n && n.style.strokeWidth) || 0; });
+      const r3 = this.row(body, '圆角');
+      this.selRows.push(r3);
+      const rd = this.numInput(r3, 0, 99, 1, v => execStyle({ radius: clamp(parseInt(v) || 0, 0, 99) }));
+      this.syncer(() => { const n = selNode(); rd.value = (n && n.style.radius) || 0; });
+      const r4 = this.row(body, '虚线');
+      this.selRows.push(r4);
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      const swWrap = document.createElement('span');
+      swWrap.className = 'mte-switch';
+      const swTk = document.createElement('span');
+      swTk.className = 'tk';
+      swWrap.append(cb, swTk);
+      swWrap.addEventListener('change', () => execStyle({ dashed: cb.checked ? true : null }));
+      r4.appendChild(swWrap);
+      this.syncer(() => { const n = selNode(); cb.checked = !!(n && n.style.dashed); });
+    },
+  });
+  registry.registerGroup({
+    id: 'layout', title: '布局', order: 5, needsSel: true, open: false,
+    build(body) {
+      const grid = document.createElement('div');
+      grid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px';
+      const mkXY = (key, label) => {
+        const lb = document.createElement('label');
+        lb.style.cssText = 'display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--muted)';
+        const sp = document.createElement('span'); sp.textContent = label;
+        const inp = document.createElement('input');
+        inp.type = 'number';
+        inp.addEventListener('change', () => {
+          if (!api.selectedId) return;
+          const L = D().layout.node[api.selectedId];
+          const v = parseFloat(inp.value);
+          if (!L || isNaN(v)) return;
+          if (key === 'x' || key === 'y') commands.exec('node.move', { id: api.selectedId, x: key === 'x' ? v : L.x, y: key === 'y' ? v : L.y });
+          else commands.exec('node.resize', { id: api.selectedId, w: key === 'w' ? Math.max(28, v) : L.w, h: key === 'h' ? Math.max(28, v) : L.h });
+        });
+        lb.append(sp, inp);
+        grid.appendChild(lb);
+        this.syncer(() => {
+          const L = api.selectedId && D().layout.node[api.selectedId];
+          inp.value = L ? Math.round(L[key]) : '';
+        });
+      };
+      mkXY('x', 'X'); mkXY('y', 'Y'); mkXY('w', '宽 W'); mkXY('h', '高 H');
+      body.appendChild(grid);
+      const br = document.createElement('div');
+      br.className = 'eg-btnrow';
+      const fit = document.createElement('button');
+      fit.textContent = '适应画布';
+      fit.addEventListener('click', () => { canvas.shrinkToFit(); sync.writeCode(); });
+      br.appendChild(fit);
+      body.appendChild(br);
+    },
+  });
+
+  /* 组件卡片 → 画布拖拽（pointer 实现，落点即坐标） */
+  function startCompDrag(ev, comp) {
+    ev.preventDefault();
+    const ghost = document.createElement('div');
+    ghost.style.cssText = 'position:fixed;z-index:999;pointer-events:none;opacity:.75;transform:translate(-50%,-50%);width:56px';
+    ghost.innerHTML = comp.thumbnail;
+    document.body.appendChild(ghost);
+    const move = (e) => { ghost.style.left = e.clientX + 'px'; ghost.style.top = e.clientY + 'px'; };
+    move(ev);
+    const up = (e) => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      ghost.remove();
+      const r = stage.getBoundingClientRect();
+      if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) return;
+      if (!api.active) return;
+      if (comp.edgeKind) {                           // 连线组件：拖入画布 → 连线模式（点起点→点终点）
+        canvas.beginLink(comp.edgeKind);
+        return;
+      }
+      const c = canvas.screenToCanvas(e.clientX, e.clientY);
+      addNodeAt(comp.type, c.x, c.y);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  }
+  function addNodeAt(type, cx, cy) {
+    const def = createDefaultNode(type);
+    commands.exec('node.add', { node: def, x: cx - def._w / 2, y: cy - def._h / 2, w: def._w, h: def._h });
+    return def.id;
+  }
+
+  /* ---------- 9.4 Editor.sync：源码 ⇄ Model 双向同步、防环、localStorage 快照 ---------- */
+  const sync = {
+    suppress: false, serTimer: 0, persistTimer: 0, reparseTimer: 0,
+    scheduleWrite() { clearTimeout(this.serTimer); this.serTimer = setTimeout(() => this.writeCode(), 300); },
+    writeCode() {
+      if (!D()) return;
+      const src = serializer.serialize(D());
+      this.suppress = true;
+      try {
+        codeEl.value = src;
+        localStorage.setItem('mtp.code', src);
+      } finally { this.suppress = false; }
+      this.persistSoon();
+    },
+    persistSoon() { clearTimeout(this.persistTimer); this.persistTimer = setTimeout(() => this.persistDoc(), 1000); },
+    persistDoc() {
+      if (!D()) return;
+      try {
+        localStorage.setItem('mtp.doc', JSON.stringify({
+          schemaVersion: '1.0', source: serializer.serialize(D()), doc: D(), savedAt: new Date().toISOString(),
+        }));
+      } catch (_) {}
+    },
+    /* 编辑模式下用户手改源码 → 重解析 → 画布重绘（防环：程序回写走 suppress，textarea 程序赋值本就不触发 input） */
+    onUserCodeInput() {
+      clearTimeout(this.reparseTimer);
+      this.reparseTimer = setTimeout(async () => {
+        if (!api.active) return;
+        const src = codeEl.value;
+        try { await mermaid.parse(tolerantMermaid(src)); }
+        catch (e) { panel.showWarnings(['源码语法错误，画布保持原状：' + ((e && (e.str || e.message)) || e)]); return; }
+        const r = parser.parseFlowchart(src);
+        if (r.error || !r.doc) { panel.showWarnings((r.warnings || []).concat(r.error ? [r.error] : [])); return; }
+        const oldLayout = api.doc ? api.doc.layout.node : {};
+        api.doc = r.doc;
+        for (const id in oldLayout) if (model.nodeOf(r.doc, id)) r.doc.layout.node[id] = oldLayout[id];  // 同名节点迁移手工坐标
+        history.clear();
+        select(null);
+        extractLayout(r.warnings || []);           // 新增节点兜底排布 + 画布尺寸
+        canvas.render();
+        panel.showWarnings(r.warnings || []);
+        lastWarnings = r.warnings || [];
+        this.persistSoon();
+      }, 500);
+    },
+  };
+
+  /* ---------- layout 初值：从 mermaid 预览 SVG 提取（9.7：衔接无缝） ---------- */
+  function extractLayout(warnings) {
+    const d = D();
+    const L = d.layout.node;
+    const svg = viewport.querySelector('svg');
+    let found = 0;
+    if (svg) {
+      try {
+        svg.querySelectorAll('g.node').forEach(g => {
+          const id = g.getAttribute('data-id') || (g.id || '').replace(/^flowchart-(.+)-\d+$/, '$1');
+          const n = id && model.nodeOf(d, id);
+          if (!n || n.type === 'group') return;
+          const tm = /translate\(\s*([-\d.eE+]+)[ ,]+([-\d.eE+]+)/.exec(g.getAttribute('transform') || '');
+          if (!tm) return;
+          const cx = +tm[1], cy = +tm[2];
+          let w = 160, h = 60;
+          const shp = g.querySelector('rect,polygon,path,circle,ellipse');
+          if (shp) { try { const bb = shp.getBBox(); w = bb.width; h = bb.height; } catch (_) {} }
+          L[id] = { x: +(cx - w / 2).toFixed(1), y: +(cy - h / 2).toFixed(1), w: +w.toFixed(1), h: +h.toFixed(1) };
+          found++;
+        });
+        svg.querySelectorAll('g.cluster').forEach(g => {
+          let id = g.getAttribute('data-id') || (g.id || '').replace(/^flowchart-(.+?)-\d+.*$/, '$1');
+          let n = id && model.nodeOf(d, id);
+          if (!n) {                                   // id 对不上：按组标题文本兜底匹配
+            const label = (g.querySelector('span.nodeLabel,p.label,text') || {}).textContent;
+            n = d.nodes.find(x => x.type === 'group' && (x.text === (label || '').trim() || x.id === (label || '').trim()));
+            id = n && n.id;
+          }
+          if (!n || n.type !== 'group' || L[id]) return;
+          /* mermaid v11：cluster g 无 transform，定位在内部 rect 的 x/y 属性（绝对画布坐标） */
+          const rect = g.querySelector('rect');
+          if (rect && rect.getAttribute('width')) {
+            const x = parseFloat(rect.getAttribute('x')) || 0;
+            const y = parseFloat(rect.getAttribute('y')) || 0;
+            const w = parseFloat(rect.getAttribute('width')) || 280;
+            const h = parseFloat(rect.getAttribute('height')) || 130;
+            L[id] = { x: +x.toFixed(1), y: +y.toFixed(1), w: +w.toFixed(1), h: +h.toFixed(1) };
+            found++;
+            return;
+          }
+          const tm = /translate\(\s*([-\d.eE+]+)[ ,]+([-\d.eE+]+)/.exec(g.getAttribute('transform') || '');
+          if (!tm) return;
+          const cx = +tm[1], cy = +tm[2];
+          let w = 280, h = 130;
+          const shp = g.querySelector('rect');
+          if (shp) { try { const bb = shp.getBBox(); w = bb.width; h = bb.height; } catch (_) {} }
+          L[id] = { x: +(cx - w / 2).toFixed(1), y: +(cy - h / 2).toFixed(1), w: +w.toFixed(1), h: +h.toFixed(1) };
+          found++;
+        });
+      } catch (_) {}
+    }
+    const missing = d.nodes.filter(n => !L[n.id]);
+    if (missing.length) {
+      warnings.push(`${missing.length} 个节点未能读取 mermaid 坐标，已用网格兜底排布（可拖动调整）`);
+      missing.forEach((n, i) => {
+        const size = NODE_SIZES[n.type] || NODE_SIZES.rect;
+        L[n.id] = { x: 60 + (i % 3) * 230, y: 60 + ((i / 3) | 0) * 140, w: size[0], h: size[1] };
+      });
+    }
+    let mx = 0, my = 0;
+    for (const k in L) { mx = Math.max(mx, L[k].x + L[k].w); my = Math.max(my, L[k].y + L[k].h); }
+    d.layout.canvas = { w: Math.max(800, mx + 80), h: Math.max(600, my + 80) };
+    return found;
+  }
+
+  /* ---------- 模式切换（9.3） ---------- */
+  let lastWarnings = [];
+  async function enter() {
+    if (api.active) return { ok: true };
+    const src = codeEl.value;
+    if (!src.trim()) return { ok: false, error: '请先输入 Mermaid 流程图源码' };
+    if (modeOf(src) !== 'mermaid') return { ok: false, error: '编辑模式仅支持 Mermaid 流程图（当前内容是 SVG/HTML）' };
+    /* mermaid 渲染一次：既是语法预检，也是 layout 初值来源（9.7） */
+    $('modeSel').value = 'mermaid';
+    const rr = await renderDiagram(src);
+    if (!rr || rr.ok !== true) return { ok: false, error: (rr && rr.error) || 'Mermaid 渲染失败，无法进入编辑' };
+    /* doc：localStorage 快照命中 → 恢复编辑现场（含手工 layout）；否则重新解析 */
+    let restored = false, warnings = [];
+    try {
+      const snap = JSON.parse(localStorage.getItem('mtp.doc') || 'null');
+      if (snap && snap.source === codeEl.value && model.migrate(snap.doc)) { api.doc = snap.doc; restored = true; }
+    } catch (_) {}
+    if (!restored) {
+      const r = parser.parseFlowchart(codeEl.value);
+      if (r.error || !r.doc) return { ok: false, error: r.error || '解析失败', warnings: r.warnings };
+      api.doc = r.doc;
+      warnings = r.warnings;
+      history.clear();
+      extractLayout(warnings);
+    }
+    api.active = true;
+    api.selectedIds = new Set();
+    api.selectedId = null;
+    api.selectedEdge = null;
+    document.body.classList.add('edit-mode');
+    canvas.mount(viewport);
+    canvas.render();
+    canvas.syncExport();
+    fitSoon();
+    panel.setModeUI(true);
+    panel.showWarnings(warnings);
+    lastWarnings = warnings;
+    sync.persistSoon();
+    return { ok: true, warnings };
+  }
+  function exit() {
+    if (!api.active) return { ok: true };
+    sync.writeCode();                              // D3：样式回写源码（布局不回写）
+    api.active = false;
+    api.selectedIds = new Set();
+    api.selectedId = null;
+    api.selectedEdge = null;
+    textEd.close();
+    document.body.classList.remove('edit-mode');
+    canvas.unmount();
+    panel.setModeUI(false);
+    panel.showWarnings([]);
+    renderDiagram();
+    return { ok: true };
+  }
+  function buildSidecar() {
+    return { schemaVersion: '1.0', source: serializer.serialize(D()), doc: deepClone(D()), savedAt: new Date().toISOString() };
+  }
+  function saveMte() {
+    if (!D()) { toast('当前没有编辑文档', 'err'); return; }
+    const data = JSON.stringify(buildSidecar(), null, 2);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([data], { type: 'application/json' }));
+    a.download = 'mermaid-editor-' + new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-') + '.mte';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  }
+  async function restoreMte(json) {
+    const obj = JSON.parse(json);
+    const d = model.migrate(obj.doc);
+    if (!d) throw new Error('无法识别的 .mte 文件（schemaVersion 不匹配）');
+    api.doc = d;
+    const src = obj.source || serializer.serialize(d);
+    codeEl.value = src;
+    localStorage.setItem('mtp.code', src);
+    sync.persistDoc();
+    if (api.active) {
+      history.clear();
+      select(null);
+      canvas.render();
+      canvas.syncExport();
+      panel.showWarnings([]);
+      fitSoon();
+    } else {
+      const r = await enter();                     // persistDoc 已写入 → enter 命中快照恢复 layout
+      if (!r.ok) throw new Error(r.error || '进入编辑失败');
+    }
+    return { ok: true };
+  }
+
+  /* ---------- api 接线（命令落地 → 画布/编辑栏/源码联动） ---------- */
+  api.registry = registry;
+  api.canvas = canvas;
+  api.panel = panel;
+  api.sync = sync;
+  api.afterChange = function (type, p) {
+    if (!api.active) return;
+    if (type === 'undo' || type === 'redo' || type === 'node.add' || type === 'node.delete' ||
+        type === 'nodes.delete' || type === 'node.moveMany' || type === 'edge.add' || type === 'edge.delete' ||
+        type === 'edge.mid' || type === 'edge.anchor')
+      canvas.render();
+    else if (p && p.id) canvas.refreshNode(p.id);
+    if (panel.inited) panel.syncSelection();
+    sync.scheduleWrite();
+    api.onHistory();
+  };
+  api.onHistory = function () {
+    const u = $('btnUndo'), r = $('btnRedo');
+    if (u) u.disabled = !history.canUndo();
+    if (r) r.disabled = !history.canRedo();
+  };
+  function toastMte(text, kind) {
+    const elx = $('mtpToast');
+    if (!elx) return;
+    elx.textContent = text;
+    elx.className = 'show' + (kind ? ' ' + kind : '');
+    clearTimeout(toastMte.t);
+    toastMte.t = setTimeout(() => { elx.className = ''; }, 2600);
+  }
+
+  /* ---------- 9.7 window.__mtpEdit 测试钩子（只增不改，同 __mtp 约定；验收全走此钩子） ---------- */
+  window.__mtpEdit = {
+    version: '3.0',
+    enter, exit,
+    isActive: () => api.active,
+    doc: () => (D() ? deepClone(D()) : null),
+    exec: (type, payload) => commands.exec(type, payload),
+    addNode(type, x, y) {
+      if (!D()) return null;
+      const c = D().layout.canvas;
+      return addNodeAt(type, x == null ? c.w / 2 : x, y == null ? c.h / 2 : y);
+    },
+    select: id => selectOnly(id ? [id] : []),
+    selectMany: ids => selectOnly(Array.isArray(ids) ? ids : []),
+    updateText: (id, t) => commands.exec('node.text', { id, text: t }),
+    updateStyle: (id, patch) => commands.exec('node.style', { id, patch }),
+    move: (id, x, y) => commands.exec('node.move', { id, x, y }),
+    resize: (id, w, h) => {
+      const L = D() && D().layout.node[id];
+      if (!L) return false;
+      return commands.exec('node.resize', { id, x: L.x, y: L.y, w, h });
+    },
+    del: id => commands.exec('node.delete', { id }),
+    undo: () => history.undo(),
+    redo: () => history.redo(),
+    serialize: () => (D() ? serializer.serialize(D()) : ''),
+    importDoc: async (src) => {
+      codeEl.value = String(src ?? '');
+      localStorage.setItem('mtp.code', codeEl.value);
+      if (api.active) {
+        const r = parser.parseFlowchart(codeEl.value);
+        if (r.error || !r.doc) return { ok: false, error: r.error || '解析失败', warnings: r.warnings };
+        const oldLayout = api.doc ? api.doc.layout.node : {};
+        api.doc = r.doc;
+        for (const id in oldLayout) if (model.nodeOf(r.doc, id)) r.doc.layout.node[id] = oldLayout[id];  // 同名节点迁移手工坐标（新 doc layout 为空，不能以它为前提）
+        history.clear();
+        select(null);
+        extractLayout(r.warnings || []);
+        canvas.render();
+        canvas.syncExport();
+        panel.showWarnings(r.warnings || []);
+        lastWarnings = r.warnings || [];
+        sync.persistSoon();
+        return { ok: true, warnings: r.warnings };
+      }
+      return enter();
+    },
+    saveMte: () => (D() ? JSON.stringify(buildSidecar()) : ''),
+    restoreMte: json => restoreMte(json),
+    state: () => ({
+      active: api.active, selectedId: api.selectedId, selectedCount: api.selectedIds ? api.selectedIds.size : 0,
+      canUndo: history.canUndo(), canRedo: history.canRedo(),
+      undoDepth: history.undoStack.length,
+      nodes: D() ? D().nodes.length : 0, edges: D() ? D().edges.length : 0,
+      warnings: lastWarnings,
+    }),
+    warnings: () => lastWarnings,
+  };
+
+  api.init = function () {
+    panel.init();
+    api.onHistory();
+  };
+  return api;
+})();
+
 console.info('[MermaidToPng] 外观系统 v6：标题=图片突出色 · 其他文字=图片辅助色 · 背景支持水平翻转 · 主按钮=玻璃；若行为异常请 Ctrl+F5 强刷');
 (function init() {
   try {
@@ -3747,6 +6322,7 @@ console.info('[MermaidToPng] 外观系统 v6：标题=图片突出色 · 其他�
   if (savedSplit) document.documentElement.style.setProperty('--split', savedSplit);
   codeEl.value = localStorage.getItem('mtp.code') ?? EXAMPLE;
   renderDiagram();
+  Editor.init();          // 编辑层 v3（§9）：面板/按钮/快捷键/编辑栏就绪（不自动进入编辑）
 })();
 </script>
 </body>

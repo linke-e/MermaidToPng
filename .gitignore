@@ -4,3 +4,6 @@ MermaidToPng-portable.zip
 # 系统垃圾
 Thumbs.db
 Desktop.ini
+# 编辑层验证临时目录（run_verify.py 等，本地回归用）
+.tmp_verify/
+.tmp_*.js

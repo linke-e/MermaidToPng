@@ -3,7 +3,7 @@ import urllib.request
 import os
 import sys
 
-OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "MermaidToPng", "mermaid.min.js")
+OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mermaid.min.js")
 PROXY = "http://127.0.0.1:7897"
 
 SOURCES = [
