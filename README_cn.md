@@ -43,7 +43,7 @@ Mermaid / SVG / HTML 代码转 PNG 图片工具
 2. 打开页面（线上或本地），点 header「外观」左侧的「Agent」按钮 → 填端口 + 配对码 → 连接
 3. 此后 Agent 调 `mtp_render(code, output_path)` 即可把 Mermaid / SVG / HTML 渲染成 PNG 写入指定目录（`--root` 沙箱内）
 
-详见 `agent/README.md` 与 `ARCHITECTURE.md` §4。
+详见 [README.md](agent/README_cn.md) 与 [ARCHITECTURE](ARCHITECTURE_cn.md) §4。
 ## 注意事项
 - 代码草稿、语法模式和偏好存在浏览器本地（localStorage），不跟随文件走，换电脑从默认示例开始
 ## 升级 mermaid 库

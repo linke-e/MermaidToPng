@@ -1,3 +1,5 @@
+<p align="center"> <a href="README_cn.md">简体中文</a> </p>
+
 # MermaidToPng
 Mermaid / SVG / HTML to PNG converter
 Render Mermaid diagrams, SVG vector graphics, HTML fragments or full web pages into high-resolution PNG images. Single file, no installation, works offline.
@@ -50,7 +52,7 @@ Just a modern browser (Edge / Chrome / Firefox). Nothing to install, no network,
 2. Open the page (online or local), click the "Agent" button to the left of "Appearance" (外观) in the header → enter the port + pairing code → connect
 3. From then on the Agent calls `mtp_render(code, output_path)` to render Mermaid / SVG / HTML into a PNG written under the sandboxed `--root` directories
 
-See `agent/README.md` and `ARCHITECTURE.md` §4 for details.
+See [README.md](agent/README.md) and [ARCHITECTURE](ARCHITECTURE.md) §4 for details.
 
 ## Notes
 - Code drafts, syntax mode and preferences live in the browser (localStorage) and do not travel with the file; on a new computer you start from the default example
@@ -61,5 +63,5 @@ python fetch_mermaid.py      # pulls a new mermaid.min.js
 ```
 After pulling, re-inline the new library into `MermaidToPng.html` (replace the first inline `<script>...</script>` block in the file, i.e. the block holding the mermaid library).
 
-## Spinning Stone (One Hour)
+## Spinning Stone One Hour
 ![Stone Badge](https://stone.professorlee.work/api/stone/linke-e/MermaidToPng)
