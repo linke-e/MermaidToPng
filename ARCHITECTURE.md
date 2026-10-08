@@ -29,9 +29,9 @@ Three governing principles:
 | HTML input rendering | `renderHTML`: srcdoc iframe mount (fragments auto-wrapped into a minimal document + an inline-block wrapper); `pointer-events:none` lets zoom/pan events pass through to the stage |
 | HTML size measurement | Fragment: wrapper element `getBoundingClientRect`; full document: `body.getBoundingClientRect` first (respects explicit width/height), expanding only when content truly overflows the container (scroll > client). Working width 900px, overflow widens up to 3840, height always measured from content |
 | HTML export | `buildHTMLExportSvg`: clone `documentElement` wrapped in a `<foreignObject>` (width/height = measured size) → same export pipeline; `<script>` in the iframe has already executed, so the clone is the final DOM |
-| Preview zoom & pan | `#stage` (overflow:hidden viewport) + `#viewport` (CSS `translate+scale`, origin top-left); wheel zooms with the mouse position as the fixed point; Pointer Events drag; "Fit" and "1:1" buttons adjust the view |
+| Preview zoom & pan | `#stage` (overflow:hidden viewport) + `#viewport` (CSS `translate+scale`, origin top-left); wheel zooms with the mouse position as the fixed point; Pointer Events drag; "Fit" and "Zoom" (click to type an exact ratio, 5%–800%) buttons adjust the view; on touch, one finger never pans the preview and a two-finger pinch zooms it (finger-midpoint movement pans) |
 | PNG download | SVG → data:URL → `<img>` → Canvas (scaled) → `toBlob` → `<a download>` triggers the browser's save-as |
-| Export background / transparency | `input[type=color]` background picker, Canvas `fillRect` fill; transparent takes precedence and grays out the color control; the preview canvas syncs the chosen color live (`syncStageBg`); transparent shows a checkerboard in preview and exports true transparency |
+| Export background / transparency | background picker (click opens a swatch dialog with a "Custom…" entry that programmatically raises the native color picker — works on iOS where the native picker is unavailable), Canvas `fillRect` fill; transparent takes precedence and grays out the color control; the preview canvas syncs the chosen color live (`syncStageBg`); transparent shows a checkerboard in preview and exports true transparency |
 | Appearance system | Uploaded image is compressed (longest edge 1920, JPEG 85%) into a global background layer; fill/zoom/blur/mask are four live parameters; a 48×48-bucket quantization + saturation-weighted dominant color is written to `--dominant` (tints the main headings, auto-brightens when too dark); `body.has-bg` enables glass blur and difference blending for text; the appearance incl. dataURL persists as a whole in `mtp.appearance` |
 
 ### 2.2 Module Structure (inside the single file)
@@ -64,7 +64,7 @@ graph TD
 | Viewport | `zoomAt/fitView` | Transform = `translate(tx,ty) scale(s)`; wheel fixed-point formula `tx' = mx-(mx-tx)k`; new diagrams auto-fit the window |
 | Export | `exportPNGBlob(mult, transparent, bgColor)` | 1×/2×/3× factors; Canvas limit guard (16384 per side / 2^28 total pixels, auto step-down); oversized content falls back from data:URL to blob:URL; filename prefix per mode `mermaid-/svg-/html-` |
 | Editor | event layer | 400ms debounced live render; localStorage autosave; Tab inserts two spaces |
-| Test hook | `window.__mtp` | `render / exportBlob / detect / setZoom / fit / state` |
+| Test hook | `window.__mtp` | `render / exportBlob / detect / setZoom / zoomTo / fit / state` |
 
 ## 3. File Inventory
 
@@ -259,7 +259,7 @@ interface MteEdge {
 
 ```text
 ┌────────────────────────────────────────────────────────────────┐
-│ header: logo · 【Undo · Redo · Import · Save】(edit mode only) · Agent · Appearance │
+│ header: logo · 【Undo · Redo · Import · Download mte】(edit mode only) · Agent · Appearance │
 ├──────────────┬───────────────────────────────────┬─────────────┤
 │ Left pane    │ Canvas (edit mode = self-drawn    │ (existing   │
 │ tabs:        │   SVG interaction layer)          │ two-pane    │
@@ -273,7 +273,7 @@ interface MteEdge {
 │ · View       │  Ctrl+drag rubber-band select;    │             │
 │              │  Delete removes (batch);          │             │
 │              │  Ctrl+Z/Y undo/redo;              │             │
-│              │  Ctrl+Alt+S save                  │             │
+│              │  Ctrl+Alt+S download mte          │             │
 └──────────────┴───────────────────────────────────┴─────────────┘
 ```
 
@@ -282,10 +282,10 @@ interface MteEdge {
 - **Edge drawing (click mode)**: clicking the "arrow/solid/dashed" card in the Components group enters edge mode → all nodes show 8 anchors (4 corners + 4 edge midpoints) → click the start anchor → click the end anchor to create the edge (anchors stored in `doc.layout.edge[edgeId] = {a, b}`, never written back to source); clicking anywhere on a node snaps to the nearest anchor as a fallback; Esc cancels.
 - **Edge editing**: clicking an edge selects it and shows three edit handles — head/tail squares re-pick endpoints (other nodes allowed); the middle circle drags the bend (quadratic Bézier control point solved from the drag, so the curve's midpoint lands at the drag point); double-click the edge line or its label to edit the edge label (the `edge.label` command is undoable; serialization emits `---|text|` pipe syntax). Hit-testing unconditionally covers both ends; endpoint overrides apply per end (changing one end takes effect immediately, the uncovered end falls back to center clipping).
 - **Label component**: a borderless, transparent-background text annotation; highest click-selection priority; serialization auto-injects a `fill:none,stroke:none` classDef and the parser recognizes such nodes back as labels (round-trip stable).
-- **Grid guides**: bottom-most dashed row/column lines on the edit canvas (SVG pattern, rect ±60000 covering the entire visible canvas area); colors adapt to the background — transparent = neutral gray, solid = a low-saturation complementary color (HSL hue +180°), with a background image the appearance accent `--aux` is used; the "View" group holds the toggle + spacing 10–500px, persisted in `localStorage['mte.grid']`; the grid layer is temporarily removed before serialization — **never exported into the PNG**.
-- **Canvas navigation**: wheel = zoom in both edit and preview modes, drag on empty canvas = pan; the preview page never pages (vertical scrolling belongs to the edit panel itself).
+- **Grid guides**: bottom-most dashed row/column lines on the edit canvas (SVG pattern, rect ±60000 covering the entire visible canvas area); colors adapt to the background — transparent = neutral gray, solid = a low-saturation complementary color (HSL hue +180°), with a background image the appearance accent `--aux` is used; the "View" group holds the toggle + spacing 10–500px, persisted in `localStorage['mte.grid']`; the grid layer is temporarily removed before serialization — **never exported into the PNG**. While guides are on, node moves (single & multi) and resizes snap to grid lines (left/center/right, top/middle/bottom candidates, smallest non-zero correction wins; threshold = 7 screen px converted to canvas units, capped at gap/3; line-like components — edge midpoint/endpoint drags and link mode — never snap).
+- **Canvas navigation**: wheel = zoom in both edit and preview modes, drag on empty canvas = pan; on touch, dragging a node moves it, dragging a resize handle scales it (touch-enlarged hit zones), dragging empty space does nothing (no preview panning), and a two-finger pinch zooms the preview with finger-midpoint panning — entering pinch bounces back any in-flight component drag; the preview page never pages (vertical scrolling belongs to the edit panel itself).
 - **Multi-select**: `selectedIds` set + `selectedId` primary (last clicked); style changes apply to all selected nodes; moving a multi-select is one `node.moveMany` command; no resize handles and the Layout group grays out during box/multi-select. "Background opacity" is a node-level style (↔ source `fill-opacity`, also applies to groups/labels).
-- **Saving**: the `.mte` sidecar (JSON: `{schemaVersion, source, doc, savedAt}`) lands via `<a download>`; the `mtp.doc` snapshot writes to localStorage throttled at 1s, restoring the editing scene (incl. manual layout) after refresh.
+- **Downloading mte** (button formerly labeled "Save"): the `.mte` sidecar (JSON: `{schemaVersion, source, doc, savedAt}`) lands via `<a download>`; the `mtp.doc` snapshot writes to localStorage throttled at 1s, restoring the editing scene (incl. manual layout) after refresh.
 - Edit panel colors: group titles/active tab = the background image's vivid accent `--vivid`; body and labels = the background image's dominant color `--dominant`; without a background image the `:root` default purple applies.
 
 ### 5.5 In-File Module Layout
@@ -321,7 +321,7 @@ Every mutation goes through a command; each implements `apply(doc) / revert(doc)
 ### 5.7 Built-in Components & Groups
 
 - Built-in components: rect, round, diamond, cylinder, circle, stadium, parallelogram, group, label. Components register as `ComponentDefinition` (type/label/thumbnail/createDefault); dragging into the canvas drops at the pointer as the position.
-- Edit panel groups (`ToolbarGroup` declarative controls → auto-bound to Commands): Components (shape cards), Font (family/size/bold/italic/align/text content), Color (text/background/border colors, compact rows + native color picker), Appearance (border width/corner radius/dash toggle/background opacity), Layout (X/Y/W/H numeric inputs + fit-to-canvas), View (grid toggle + spacing). New groups are a `register()` call away — Editor Core untouched.
+- Edit panel groups (`ToolbarGroup` declarative controls → auto-bound to Commands): Components (shape cards), Font (family/size/bold/italic/align/text content), Color (text/background/border colors, compact rows + swatch dialog: 24 presets / reset-to-default / "Custom…" raising the native picker — recolorable on iOS where the native picker is missing), Appearance (border width/corner radius/dash toggle/background opacity), Layout (X/Y/W/H numeric inputs + fit-to-canvas), View (grid toggle + spacing). New groups are a `register()` call away — Editor Core untouched.
 
 ### 5.8 Pitfall List
 
@@ -355,6 +355,8 @@ Every mutation goes through a command; each implements `apply(doc) / revert(doc)
 
 **Acceptance**: Chrome headless (`--headless=new --dump-dom` + injected script) — 152/152 assertions passing (2026-10-08), covering 13 acceptance categories (import/edit/styles/move-resize/delete/undo-redo/round-trip/two-way sync/export/save-restore/legacy regression) plus the iteration items (multi-select & box select, edge drawing & edge editing, label component, grid guides, edit panel scrolling); Pass B verifies refresh restore incl. manual layout; edit-mode screenshots visually inspected.
 
+**Additional acceptance (2026-10-08)**: mobile compatibility & interaction improvements — "Download mte" rename, "Zoom" button redone as exact-ratio input, grid snapping (move + resize, line-like excluded), touch gestures (one-finger component drag, two-finger pinch zoom/pan, pinch interrupt bounce-back) and the swatch color picker — Edge headless regression 30/30 assertions passing (render, button labels, dialogs, no-pan-on-touch, pinch, touch drag & resize, snap-to-grid, undo, swatch recolor/reset, background swatch, serialization, no JS errors).
+
 **Roadmap** (not yet implemented):
 
 - Alignment, grid snapping, minimap, copy/paste
@@ -362,6 +364,21 @@ Every mutation goes through a command; each implements `apply(doc) / revert(doc)
 - "Auto re-layout" button: drop manual layout, back to mermaid dagre layout
 - sequence / class diagrams (new diagramType + new Parser/Serializer branches; Editor Core untouched)
 - MCP tool `mtp_edit` (Agents edit diagrams directly through the same `__mtpEdit` core)
+
+### 5.10 Mobile Compatibility & Interaction Improvements (2026-10-08)
+
+> The input layer branches on `e.pointerType === 'touch'` (`TOUCH_DEVICE` media query only sets defaults, e.g. enlarged touch hit zones); the editing core (MteDoc / Command / Serializer) is fully shared.
+
+| Item | Behavior |
+|---|---|
+| "Save" → "Download mte" | Header edit-tool button renamed (it downloads a .mte file); `Ctrl+Alt+S` and `__mtpEdit.saveMte` unchanged |
+| "1:1" button redone as "Zoom" | Click opens a dialog for an exact ratio: 5%–800%; input ≤20 is read as a multiplier (1.5→150%), >20 as percent; `zoomTo()` keeps the viewport center as the fixed point; `__mtp.zoomTo` hook added (add-only) |
+| Grid snapping | With guides on, node moves (single & multi) and resizes snap to grid lines (smallest non-zero correction among left/center/right, top/middle/bottom; threshold 7 screen px in canvas units, ≤ gap/3); line-like components (edge midpoint/endpoint drags, link mode) never snap |
+| One-finger gestures | Drag a node = move it; drag a resize handle = scale it (touch-enlarged hit zones: handles 16px / anchors 6px / edge points 15px, thresholds 18/14/16px); drag empty space = nothing (**no preview panning**; desktop mouse panning unchanged) |
+| Two-finger gestures | Pinch in/out = zoom the preview, midpoint movement = pan (`#stage` capture-phase gesture state machine, same clamp 0.05–8 as desktop); entering pinch calls `Editor.canvas.cancelDrag()` to bounce back an in-flight drag; dropping to one finger returns to IDLE without resuming it |
+| Swatch color picking | iOS Safari lacks `<input type="color">`, which left text/background/border colors and the export background unchangeable on mobile; color swatches now open a swatch dialog (24 presets + reset + "Custom…"); MteDoc stays device-independent (no render override, no document pollution) |
+
+Implementation notes: pinch uses capture-phase listeners (unaffected by the canvas `stopPropagation`) tracking a two-pointer ID map; the zoom formula `tx = fingerCenter - (startCenter - startTx) × ns/startScale` does zoom+pan in one step; snapping lives inside the Editor (`gridSnap1 / gridSnapDelta / gridSnapResize`) — moves snap by the dragged bounding box, resizes only snap the moving edge.
 
 ## 6. Known Limitations
 
@@ -377,7 +394,7 @@ Every mutation goes through a command; each implements `apply(doc) / revert(doc)
 
 | Hook | Methods |
 |---|---|
-| `window.__mtp` | `render / exportBlob / detect / setZoom / fit / state` |
+| `window.__mtp` | `render / exportBlob / detect / setZoom / zoomTo / fit / state` |
 | `window.__mtpAgent` | Agent tool core (detect / render / export), reused by the MCP bridge |
 | `window.__mtpEdit` | `enter / exit / isActive / doc / exec / addNode / select / selectMany / updateText / updateStyle / move / resize / del / undo / redo / serialize / importDoc / saveMte / restoreMte / state` (version `'3.0'`) |
 

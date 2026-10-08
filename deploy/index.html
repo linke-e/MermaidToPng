@@ -2528,6 +2528,17 @@ globalThis.mermaid = globalThis.__esbuild_esm_mermaid.default;
   #mtpToast.show{opacity:1;transform:translateX(-50%) translateY(0)}
   #mtpToast.ok{border-color:rgba(34,197,94,.5)}
   #mtpToast.err{border-color:rgba(239,68,68,.5)}
+  /* 精确缩放输入弹层（「1:1」重做）与色板弹层（2026-10-08） */
+  #zoomDlg,#swatchDlg{position:fixed;inset:0;z-index:80;display:flex;align-items:center;justify-content:center;background:rgba(4,7,14,.45)}
+  .zoom-dlg-card{width:264px;max-width:92vw;background:rgba(18,22,36,.96);border:1px solid var(--panel-border);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:10px;box-shadow:0 12px 40px rgba(0,0,0,.5)}
+  .zoom-dlg-title{font-size:12.5px;color:var(--dominant);letter-spacing:.5px}
+  #zoomDlgInput{background:rgba(255,255,255,.05);color:var(--fg);border:1px solid var(--panel-border);border-radius:8px;padding:7px 10px;font:inherit;font-size:16px;outline:none}
+  #zoomDlgInput:focus{border-color:var(--vivid)}
+  #zoomDlgInput.bad{border-color:var(--danger)}
+  .zoom-dlg-btns{display:flex;gap:8px;justify-content:flex-end}
+  .sw-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:6px}
+  .sw-c{width:100%;aspect-ratio:1;border-radius:6px;border:1px solid rgba(255,255,255,.25);padding:0;cursor:pointer;transition:transform .12s}
+  .sw-c:hover{transform:scale(1.12)}
   #agentStatus{font-size:13px}
   #agentStatus.ok{color:var(--vivid,#7c3aed)}
   #agentHint{font-size:12px;color:var(--muted);line-height:1.6}
@@ -2620,8 +2631,9 @@ globalThis.mermaid = globalThis.__esbuild_esm_mermaid.default;
     box-shadow:0 2px 10px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.15);cursor:pointer;overflow:hidden;
     transition:filter .15s}
   .swatch-cur:hover{filter:brightness(1.15)}
-  .swatch-cur input[type=color]{position:absolute;inset:-4px;width:calc(100% + 8px);
-    height:calc(100% + 8px);opacity:0;cursor:pointer;border:none;padding:0}
+  .swatch-cur input[type=color]{position:absolute;left:0;top:0;width:1px;height:1px;opacity:0;
+    pointer-events:none;border:none;padding:0}
+  /* 色块点击 = 色板弹层（移动端可用）；原生取色器经色板「自定义…」编程唤起 */
   .swatch-cur .swatch-hex{position:absolute;right:8px;top:50%;transform:translateY(-50%);
     font-family:var(--mono);font-size:10.5px;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.8);
     pointer-events:none;background:rgba(0,0,0,.35);padding:1px 6px;border-radius:5px}
@@ -2666,7 +2678,7 @@ globalThis.mermaid = globalThis.__esbuild_esm_mermaid.default;
     padding:3px 6px;text-align:center;line-height:1.3;box-sizing:border-box}
 
   /* 分割条 */
-  #split{cursor:col-resize;background:transparent;transition:background .15s}
+  #split{cursor:col-resize;background:transparent;transition:background .15s;touch-action:none}
 
   #split:hover{background:rgba(124,58,237,.35)}
 
@@ -2687,7 +2699,7 @@ globalThis.mermaid = globalThis.__esbuild_esm_mermaid.default;
     <button id="btnUndo" title="撤销 (Ctrl+Z)">↶ 撤销</button>
     <button id="btnRedo" title="重做 (Ctrl+Y)">↷ 重做</button>
     <button id="btnImportMte" title="导入 .mte 编辑文档（源码+手工布局）">导入</button>
-    <button id="btnSaveMte" title="保存 .mte 编辑文档 (Ctrl+Alt+S)">保存</button>
+    <button id="btnSaveMte" title="下载 .mte 编辑文档 (Ctrl+Alt+S)">下载mte</button>
     <input type="file" id="mteFile" accept=".mte,application/json" style="display:none">
   </span>
   <button id="btnAgent" title="Agent 桥：MCP 工具经本地 mtp-mcp 长轮询进本页执行">Agent</button>
@@ -2781,7 +2793,7 @@ globalThis.mermaid = globalThis.__esbuild_esm_mermaid.default;
         <span class="dim" id="sizeInfo"></span>
         <div class="spacer"></div>
         <button id="btnFit"    title="适应窗口">适应</button>
-        <button id="btnReset"  title="100% 原始尺寸">1:1</button>
+        <button id="btnReset"  title="点击输入精确缩放比例（如 150 或 1.5 = 150%）">缩放</button>
         <span class="dim" id="zoomLabel" style="min-width:46px;text-align:right">100%</span>
         <span class="dim" style="margin-left:6px">|</span>
         <select id="pngScale" title="PNG 导出倍率">
@@ -2842,6 +2854,43 @@ const state = {
   mode: '',                        // 当前生效语法：mermaid | svg | html
   seq: 0, error: '', dragging: null,
 };
+
+/* ---- 移动端检测（2026-10-08）：只做默认策略（UI 命中区放大等）；事件级仍以 e.pointerType === 'touch' 为最终依据 ---- */
+const TOUCH_DEVICE = (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches)
+  || (navigator.maxTouchPoints || 0) > 0;
+
+/* ---- 色板弹层：不依赖 <input type="color"> 的统一取色入口 ----
+   iOS Safari 不支持原生取色器，编辑栏「字体/背景/边框颜色」与导出「底色」在移动端
+   始终为默认色无法修改；色板补齐该入口，「自定义…」编程唤起原生取色器（桌面）。 */
+const SWATCH_COLORS = ['#ffffff','#c8cdd8','#94a3b8','#64748b','#475569','#1e293b','#0f172a','#000000',
+  '#ef4444','#f97316','#f59e0b','#eab308','#84cc16','#22c55e','#10b981','#14b8a6',
+  '#06b6d4','#0ea5e9','#3b82f6','#6366f1','#8b5cf6','#a855f7','#d946ef','#ec4899'];
+let swatchDlgEl = null;
+function openSwatch(curHex, onPick, onClear, onCustom) {
+  closeSwatch();
+  const dlg = document.createElement('div');
+  dlg.id = 'swatchDlg';
+  dlg.innerHTML = '<div class="zoom-dlg-card"><div class="zoom-dlg-title">选择颜色'
+    + (curHex ? '（当前 ' + String(curHex).toUpperCase() + '）' : '') + '</div>'
+    + '<div class="sw-grid">' + SWATCH_COLORS.map(c =>
+        '<button class="sw-c" data-c="' + c + '" style="background:' + c + '" title="' + c + '"></button>').join('')
+    + '</div><div class="zoom-dlg-btns">'
+    + (onCustom ? '<button id="swCustom">自定义…</button>' : '')
+    + '<button id="swClear">恢复默认</button><button id="swClose">取消</button></div></div>';
+  document.body.appendChild(dlg);
+  swatchDlgEl = dlg;
+  const close = () => { dlg.remove(); if (swatchDlgEl === dlg) swatchDlgEl = null; };
+  dlg.addEventListener('click', e => {
+    const b = e.target.closest && e.target.closest('.sw-c');
+    if (b && onPick) { onPick(b.dataset.c); close(); }
+  });
+  dlg.addEventListener('pointerdown', e => { e.stopPropagation(); if (e.target === dlg) close(); });
+  const q = s => dlg.querySelector(s);
+  if (q('#swCustom')) q('#swCustom').onclick = () => { close(); if (onCustom) onCustom(); };
+  q('#swClear').onclick = () => { close(); if (onClear) onClear(); };
+  q('#swClose').onclick = close;
+}
+function closeSwatch() { if (swatchDlgEl) { swatchDlgEl.remove(); swatchDlgEl = null; } }
 
 const EXAMPLE = `graph LR
   A[粘贴 Mermaid 代码] --> B{语法正确?}
@@ -3213,6 +3262,55 @@ function fitView() {
 let fitTimer = null;
 function fitSoon() { clearTimeout(fitTimer); fitTimer = setTimeout(fitView, 30); }
 
+/* ---- 精确缩放（2026-10-08「1:1」按钮重做）：绝对比例，默认以视口中心为不动点 ----
+   「缩放」按钮 → 弹层输入（5%–800%）；≤20 的输入按倍数解释（1.5 → 150%），>20 按百分数。 */
+function zoomTo(ns, cx, cy) {
+  if (!state.vbW) return;
+  const r = stage.getBoundingClientRect();
+  zoomAt(cx == null ? r.width / 2 : cx, cy == null ? r.height / 2 : cy,
+         Math.min(8, Math.max(0.05, ns)) / state.scale);
+}
+function parseZoomPct(v) {
+  const m = /^\s*([0-9]+(?:\.[0-9]+)?)\s*%?\s*$/.exec(String(v ?? ''));
+  if (!m) return null;
+  const n = parseFloat(m[1]);
+  if (!(n > 0)) return null;
+  return Math.round(Math.min(800, Math.max(5, n <= 20 ? n * 100 : n)));
+}
+let zoomDlgEl = null;
+function openZoomDlg() {
+  if (!state.vbW) return;
+  closeZoomDlg();
+  const dlg = document.createElement('div');
+  dlg.id = 'zoomDlg';
+  dlg.innerHTML = '<div class="zoom-dlg-card">'
+    + '<div class="zoom-dlg-title">预览缩放比例（5% – 800%）</div>'
+    + '<input type="text" inputmode="decimal" id="zoomDlgInput" placeholder="如 150 或 1.5 = 150%">'
+    + '<div class="zoom-dlg-btns"><button id="zoomDlgCancel">取消</button><button id="zoomDlgOk" class="primary">确定</button></div>'
+    + '</div>';
+  document.body.appendChild(dlg);
+  zoomDlgEl = dlg;
+  const inp = dlg.querySelector('#zoomDlgInput');
+  inp.value = Math.round(state.scale * 100) + '%';
+  inp.focus(); inp.select();
+  const close = () => { dlg.remove(); if (zoomDlgEl === dlg) zoomDlgEl = null; };
+  const ok = () => {
+    const pct = parseZoomPct(inp.value);
+    if (pct == null) { inp.classList.add('bad'); inp.focus(); return; }
+    zoomTo(pct / 100);
+    close();
+  };
+  dlg.querySelector('#zoomDlgOk').onclick = ok;
+  dlg.querySelector('#zoomDlgCancel').onclick = close;
+  dlg.addEventListener('pointerdown', e => { e.stopPropagation(); if (e.target === dlg) close(); });
+  inp.addEventListener('keydown', e => {
+    e.stopPropagation();                           // 不落入编辑模式全局快捷键
+    if (e.key === 'Enter') ok();
+    else if (e.key === 'Escape') close();
+  });
+}
+function closeZoomDlg() { if (zoomDlgEl) { zoomDlgEl.remove(); zoomDlgEl = null; } }
+
 stage.addEventListener('wheel', e => {
   if (!state.lastRawSvg) return;
   e.preventDefault();
@@ -3223,6 +3321,7 @@ stage.addEventListener('wheel', e => {
 
 stage.addEventListener('pointerdown', e => {
   if (e.button !== 0 || !state.lastRawSvg) return;
+  if (e.pointerType === 'touch') return;         // 移动端（2026-10-08）：单指不拖预览；缩放/平移走双指 pinch，组件拖动由编辑画布处理
   if ($('mteText').contains(e.target)) return;   // 文本编辑浮层内：交给 textarea（preventDefault 会禁掉聚焦与光标）
   e.preventDefault();                       // 阻止拖动触发原生文本选择，避免拖图变成选字
   state.dragging = { x: e.clientX, y: e.clientY, tx: state.tx, ty: state.ty };
@@ -3237,6 +3336,47 @@ stage.addEventListener('pointermove', e => {
 });
 ['pointerup', 'pointercancel'].forEach(ev =>
   stage.addEventListener(ev, () => { state.dragging = null; stage.classList.remove('grabbing'); }));
+
+/* ---- 移动端双指 pinch（2026-10-08）：捏合/分离 = 缩小/放大预览图，指心移动 = 平移 ----
+   捕获阶段监听（不受编辑画布 stopPropagation 影响）；进入 pinch 即中断编辑拖拽回弹；
+   剩一指不恢复拖拽（回 IDLE，避免手势串位）。缩放范围与 zoomAt/zoomTo 同一套 clamp。 */
+const pinch = { active: false, ids: new Map(), startDist: 1, startScale: 1, startTx: 0, startTy: 0, scx: 0, scy: 0 };
+stage.addEventListener('pointerdown', e => {
+  if (e.pointerType !== 'touch') return;
+  pinch.ids.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pinch.ids.size === 2) {
+    const [a, b] = [...pinch.ids.values()];
+    pinch.startDist = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+    pinch.scx = (a.x + b.x) / 2; pinch.scy = (a.y + b.y) / 2;
+    pinch.startScale = state.scale; pinch.startTx = state.tx; pinch.startTy = state.ty;
+    pinch.active = true;
+    if (window.Editor && Editor.canvas && Editor.canvas.cancelDrag) Editor.canvas.cancelDrag();   // 组件拖动/resize 让位于缩放
+    e.stopPropagation();                           // 第二指不再进入编辑画布/文本浮层
+  }
+}, true);
+stage.addEventListener('pointermove', e => {
+  if (e.pointerType !== 'touch' || !pinch.ids.has(e.pointerId)) return;
+  pinch.ids.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (!pinch.active || pinch.ids.size < 2) return;
+  e.stopPropagation();
+  const [a, b] = [...pinch.ids.values()];
+  const dist = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+  const cx = (a.x + b.x) / 2, cy = (a.y + b.y) / 2;
+  const ns = Math.min(8, Math.max(0.05, pinch.startScale * dist / pinch.startDist));
+  const r = stage.getBoundingClientRect();
+  /* 起始指心对应的画布世界点跟随当前指心：一个公式同时完成缩放与平移 */
+  state.tx = (cx - r.left) - (pinch.scx - r.left - pinch.startTx) * (ns / pinch.startScale);
+  state.ty = (cy - r.top)  - (pinch.scy - r.top  - pinch.startTy) * (ns / pinch.startScale);
+  state.scale = ns;
+  applyTransform();
+}, { passive: true });
+const pinchEnd = e => {
+  if (e.pointerType !== 'touch') return;
+  pinch.ids.delete(e.pointerId);
+  if (pinch.ids.size < 2) pinch.active = false;    // 剩一指不恢复组件拖拽：直接回 IDLE 最稳
+};
+stage.addEventListener('pointerup', pinchEnd, true);
+stage.addEventListener('pointercancel', pinchEnd, true);
 /* 双击适应画布已按需求移除（2026-10-08）：双击在编辑模式承担改文字，空白处双击不再触发适应；
    适应请用右上「适应」/「1:1」按钮 */
 
@@ -3529,7 +3669,7 @@ $('btnCopy').onclick   = async () => {
         setTimeout(() => $('btnCopy').textContent = '复制', 1200); } catch (_) {}
 };
 $('btnFit').onclick    = fitView;
-$('btnReset').onclick  = () => { if (!state.vbW) return; state.scale = 1; fitView(); };
+$('btnReset').onclick  = () => openZoomDlg();   // 「1:1」重做（2026-10-08）：点击输入精确缩放比例
 $('btnPNG').onclick    = exportPNG;
 $('pngScale').onchange = e => localStorage.setItem('mtp.pngScale', e.target.value);
 $('pngTransparent').onchange = e => {
@@ -3538,6 +3678,16 @@ $('pngTransparent').onchange = e => {
   syncStageBg();
 };
 $('pngBg').onchange = e => { localStorage.setItem('mtp.pngBg', e.target.value); syncStageBg(); };
+/* 底色点击 → 色板弹层（2026-10-08）：iOS 无原生取色器也能改底色；「自定义…」经 _mtpCustom 标记放行原生取色器 */
+$('pngBg').addEventListener('click', e => {
+  const inp = $('pngBg');
+  if (inp._mtpCustom) { inp._mtpCustom = false; return; }   // 色板「自定义…」的编程触发：走原生取色器
+  e.preventDefault();
+  openSwatch(inp.value, c => {
+    inp.value = c;
+    inp.dispatchEvent(new Event('change'));
+  }, null, () => { inp._mtpCustom = true; inp.click(); });
+});
 
 /* ================= 分割条拖动 ================= */
 const split = $('split');
@@ -3573,6 +3723,7 @@ window.__mtp = {
   render: renderDiagram,
   exportBlob: exportPNGBlob,
   setZoom: s => { state.scale = s; applyTransform(); },
+  zoomTo: s => zoomTo(s),
   fit: fitView,
   detect: detectMode,
   applyBackground: dataUrl => { appearance.dataUrl = dataUrl; appearance.vivid = null; appearance.aux = null; applyAppearance(); scheduleAppearanceSave(); },
@@ -4895,6 +5046,32 @@ window.Editor = (function () {
     else gpath.style.stroke = gridColorForBg($('pngBg').value, $('pngTransparent').checked);
   }
   function persistGrid() { localStorage.setItem('mte.grid', JSON.stringify(gridCfg)); }
+/* ---- 网格吸附（2026-10-08）：移动/缩放节点时自动吸附辅助线（网格线 = gap 整数倍）。
+   线类组件（边中点/端点拖动、连线模式）不走节点吸附；辅助线关闭时不吸附。
+   阈值按屏幕像素换算到画布坐标，且不超过间距的 1/3，避免密网格过度吸附。 ---- */
+const SNAP_SCREEN_PX = 7;
+function gridSnap1(c) {
+  const g = Math.max(10, Math.min(500, Math.round(gridCfg.gap) || 50));
+  const d = Math.round(c / g) * g - c;
+  return Math.abs(d) <= Math.min(SNAP_SCREEN_PX / Math.max(state.scale, 0.05), g / 3) ? d : 0;
+}
+function gridSnapDelta(box) {                        // 移动吸附：左/中/右 + 上/中/下取最小非零修正
+  if (!gridCfg.show) return { dx: 0, dy: 0 };
+  const pick = arr => { const nz = arr.filter(d => d !== 0); return nz.length ? nz.reduce((a, b) => (Math.abs(a) <= Math.abs(b) ? a : b)) : 0; };   // 只在非零修正中取最小：0=该边未吸附，不得参与竞争
+  return {
+    dx: pick([gridSnap1(box.x), gridSnap1(box.x + box.w / 2), gridSnap1(box.x + box.w)]),
+    dy: pick([gridSnap1(box.y), gridSnap1(box.y + box.h / 2), gridSnap1(box.y + box.h)]),
+  };
+}
+function gridSnapResize(box, dir) {                  // 缩放吸附：只吸移动中的边
+  if (!gridCfg.show) return box;
+  const r = { ...box };
+  if (dir.includes('w')) { const d = gridSnap1(r.x); if (d) { r.x += d; r.w -= d; } }
+  if (dir.includes('e')) { const d = gridSnap1(r.x + r.w); if (d) r.w += d; }
+  if (dir.includes('n')) { const d = gridSnap1(r.y); if (d) { r.y += d; r.h -= d; } }
+  if (dir.includes('s')) { const d = gridSnap1(r.y + r.h); if (d) r.h += d; }
+  return r;
+}
   ['input', 'change'].forEach(ev => $('pngBg').addEventListener(ev, () => applyGrid()));
   $('pngTransparent').addEventListener('change', () => applyGrid());
   /* 背景图上传/移除切 body.has-bg → 辅助线在「--aux(CSS)」与「按底色计算(内联)」间切换 */
@@ -4954,13 +5131,28 @@ window.Editor = (function () {
       if (!e) return false;
       const c = this.screenToCanvas(ev.clientX, ev.clientY);
       const m = this.edgeMidOf(e);
-      const th = 10 / Math.max(state.scale, 0.05);
+      const th = (TOUCH_DEVICE ? 16 : 10) / Math.max(state.scale, 0.05);
       return (c.x - m.x) ** 2 + (c.y - m.y) ** 2 <= th * th;
     },
     /* 中点拖动：pointermove 只改画布预览，pointerup 落 edge.mid 命令 */
     beginEdgeMidDrag(ev) {
       drag = { mode: 'edge-mid', id: api.selectedEdge, moved: false };
       try { ev.target.setPointerCapture(ev.pointerId); } catch (_) {}
+    },
+    /* 双指 pinch 开始时中断当前拖拽（2026-10-08）：视觉回弹到 doc 状态，不入命令栈 */
+    cancelDrag() {
+      if (!drag) return;
+      const mode = drag.mode, id = drag.id;
+      const affected = [...liveBoxes.keys()];
+      drag = null;
+      if (mode === 'edge-mid') {
+        edgeLiveMid = null;
+        const e0 = D() && D().edges.find(x => x.id === id);
+        if (e0) this.liveEdge(e0);
+      }
+      liveBoxes.clear();
+      for (const nid of affected) this.refreshNode(nid);
+      this.drawOverlay();
     },
     applyCanvasSize() {
       if (!this.svg) return;
@@ -5052,11 +5244,11 @@ window.Editor = (function () {
             gOverlay.appendChild(svgEl('rect', { class: 'mte-hilite', x: L.x - 6, y: L.y - 6, width: L.w + 12, height: L.h + 12, rx: 6,
               fill: 'rgba(124,58,237,.28)', stroke: '#7c3aed', 'stroke-width': 2 }));
             for (const p of nodeAnchors(L))
-              gOverlay.appendChild(svgEl('circle', { class: 'mte-anchor', cx: p.x, cy: p.y, r: 3.2 }));
+              gOverlay.appendChild(svgEl('circle', { class: 'mte-anchor', cx: p.x, cy: p.y, r: TOUCH_DEVICE ? 6 : 3.2 }));
             continue;
           }
           for (const p of nodeAnchors(L))
-            gOverlay.appendChild(svgEl('circle', { class: 'mte-anchor', cx: p.x, cy: p.y, r: 3.2 }));
+            gOverlay.appendChild(svgEl('circle', { class: 'mte-anchor', cx: p.x, cy: p.y, r: TOUCH_DEVICE ? 6 : 3.2 }));
         }
       }
       /* 边端点重选模式：全部节点显示 8 锚点（可点同节点其他位置，也可换节点） */
@@ -5066,7 +5258,7 @@ window.Editor = (function () {
           const L = d.layout.node[n.id];
           if (!L) continue;
           for (const p of nodeAnchors(L))
-            gOverlay.appendChild(svgEl('circle', { class: 'mte-anchor', cx: p.x, cy: p.y, r: 4 }));
+            gOverlay.appendChild(svgEl('circle', { class: 'mte-anchor', cx: p.x, cy: p.y, r: TOUCH_DEVICE ? 7 : 4 }));
         }
       }
       /* 选中边的三个编辑点：首/尾方块（点击改端点）+ 中点圆（拖动弯折） */
@@ -5074,11 +5266,11 @@ window.Editor = (function () {
         const e0 = d.edges.find(x => x.id === api.selectedEdge);
         const geo = e0 && edgeGeom(e0);
         if (geo) {
-          const H = 9, HS = H / 2;
+          const H = TOUCH_DEVICE ? 15 : 9, HS = H / 2;
           gOverlay.appendChild(svgEl('rect', { class: 'mte-endpt', 'data-end': 'a', x: geo.p1.x - HS, y: geo.p1.y - HS, width: H, height: H, 'pointer-events': 'all', style: 'cursor:pointer' }));
           gOverlay.appendChild(svgEl('rect', { class: 'mte-endpt', 'data-end': 'b', x: geo.p2.x - HS, y: geo.p2.y - HS, width: H, height: H, 'pointer-events': 'all', style: 'cursor:pointer' }));
           const mid = this.edgeMidOf(e0);
-          gOverlay.appendChild(svgEl('circle', { class: 'mte-mid', cx: mid.x, cy: mid.y, r: 5, 'pointer-events': 'all', style: 'cursor:move' }));
+          gOverlay.appendChild(svgEl('circle', { class: 'mte-mid', cx: mid.x, cy: mid.y, r: TOUCH_DEVICE ? 9 : 5, 'pointer-events': 'all', style: 'cursor:move' }));
         }
       }
       /* Ctrl+空白框选进行中：橡皮筋框 */
@@ -5092,8 +5284,8 @@ window.Editor = (function () {
         const L = liveBoxes.get(id) || d.layout.node[id];
         if (!L || !model.nodeOf(d, id)) continue;
         gOverlay.appendChild(svgEl('rect', { class: 'mte-selbox', x: L.x - 6, y: L.y - 6, width: L.w + 12, height: L.h + 12, rx: 4 }));
-        if (id === api.selectedId && ids.length === 1) {          // 8 向手柄仅单选
-          const H = 9, HS = H / 2;
+        if (id === api.selectedId && ids.length === 1) {          // 8 向手柄仅单选（触屏放大命中区）
+          const H = TOUCH_DEVICE ? 16 : 9, HS = H / 2;
           const pts = {
             nw: [L.x, L.y], n: [L.x + L.w / 2, L.y], ne: [L.x + L.w, L.y],
             e: [L.x + L.w, L.y + L.h / 2], se: [L.x + L.w, L.y + L.h],
@@ -5129,7 +5321,7 @@ window.Editor = (function () {
     /* 命中测试：所有非 group 节点的 8 锚点中，取距 pt 最近且在阈值内者（阈值≈12 屏幕像素） */
     hitAnchor(pt, excludeId) {
       const d = D();
-      const th = 12 / Math.max(state.scale, 0.05);
+      const th = (TOUCH_DEVICE ? 18 : 12) / Math.max(state.scale, 0.05);
       let best = null, bd = Infinity;
       for (const n of d.nodes) {
         if (n.type === 'group' || n.id === excludeId) continue;
@@ -5151,7 +5343,7 @@ window.Editor = (function () {
       if (!e) return null;
       const geo = edgeGeom(e);
       if (!geo) return null;
-      const th = 9 / Math.max(state.scale, 0.05);
+      const th = (TOUCH_DEVICE ? 14 : 9) / Math.max(state.scale, 0.05);
       if (Math.abs(geo.p1.x - pt.x) <= th && Math.abs(geo.p1.y - pt.y) <= th) return { id: e.id, end: 'a' };
       if (Math.abs(geo.p2.x - pt.x) <= th && Math.abs(geo.p2.y - pt.y) <= th) return { id: e.id, end: 'b' };
       return null;
@@ -5339,7 +5531,18 @@ window.Editor = (function () {
         return;
       }
       if (drag.mode === 'move' || drag.mode === 'multi-move') {
-        const dx = c.x - drag.sx, dy = c.y - drag.sy;
+        const dx0 = c.x - drag.sx, dy0 = c.y - drag.sy;
+        /* 网格吸附（2026-10-08）：单选以该节点、多选以整组包围盒为基准，修正量作用于整组 */
+        let bb = null;
+        for (const [nid, o] of drag.origins) {
+          const L0 = D().layout.node[nid];
+          if (!L0) continue;
+          const bx = o.x + dx0, by = o.y + dy0;
+          bb = bb ? { x: Math.min(bb.x, bx), y: Math.min(bb.y, by), r: Math.max(bb.r, bx + L0.w), b: Math.max(bb.b, by + L0.h) }
+                  : { x: bx, y: by, r: bx + L0.w, b: by + L0.h };
+        }
+        const sn = bb ? gridSnapDelta({ x: bb.x, y: bb.y, w: bb.r - bb.x, h: bb.b - bb.y }) : { dx: 0, dy: 0 };
+        const dx = dx0 + sn.dx, dy = dy0 + sn.dy;
         for (const [nid, o] of drag.origins) {
           const nx = o.x + dx, ny = o.y + dy;
           const L0 = D().layout.node[nid];
@@ -5358,6 +5561,8 @@ window.Editor = (function () {
         if (drag.dir.includes('s')) h = o.h + dy;
         if (drag.dir.includes('w')) { x = o.x + Math.min(dx, o.w - 28); w = o.w - (x - o.x); }
         if (drag.dir.includes('n')) { y = o.y + Math.min(dy, o.h - 28); h = o.h - (y - o.y); }
+        w = Math.max(28, w); h = Math.max(28, h);
+        ({ x, y, w, h } = gridSnapResize({ x, y, w, h }, drag.dir));   // 移动中的边吸附网格线（线类组件不经过此分支）
         w = Math.max(28, w); h = Math.max(28, h);
         liveBoxes.set(drag.id, { x, y, w, h });
         const n = model.nodeOf(d, drag.id);
@@ -6009,6 +6214,15 @@ window.Editor = (function () {
         const inp = document.createElement('input');
         inp.type = 'color';
         inp.addEventListener('input', () => execStyle({ [key]: inp.value }));
+        /* 色块点击 = 色板弹层（2026-10-08）：iOS 无原生取色器也能改颜色；「自定义…」唤起原生取色器 */
+        cur.title = '点击打开色板（含自定义取色入口）';
+        cur.addEventListener('click', () => {
+          const n0 = selNode();
+          openSwatch(toHex((n0 && n0.style[key]) || fallback),
+            c => execStyle({ [key]: c }),
+            () => execStyle({ [key]: null }),
+            () => inp.click());
+        });
         const hex = document.createElement('span');
         hex.className = 'swatch-hex';
         cur.append(inp, hex);

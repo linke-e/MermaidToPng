@@ -29,9 +29,9 @@
 | HTML 输入渲染 | `renderHTML`：srcdoc iframe 挂载（片段自动包装成最小文档 + inline-block 包裹层）；`pointer-events:none` 让缩放/拖拽事件穿透到 stage |
 | HTML 尺寸测量 | 片段：包裹元素 `getBoundingClientRect`；完整文档：`body.getBoundingClientRect` 优先（尊重显式宽高），仅当内容真溢出容器（scroll > client）才扩展。工作宽 900px，溢出放宽上限 3840，高度按内容实测 |
 | HTML 导出 | `buildHTMLExportSvg`：克隆 `documentElement` 包进 `<foreignObject>`（width/height=实测尺寸）→ 走同一导出管线；iframe 中 `<script>` 已执行，克隆的是最终 DOM |
-| 预览缩放与拖拽 | `#stage`（overflow:hidden 视口）+ `#viewport`（CSS `translate+scale`，origin 左上）；滚轮以鼠标位置为不动点缩放；Pointer Events 拖拽；「适应」「1:1」按钮调整视图 |
+| 预览缩放与拖拽 | `#stage`（overflow:hidden 视口）+ `#viewport`（CSS `translate+scale`，origin 左上）；滚轮以鼠标位置为不动点缩放；Pointer Events 拖拽；「适应」「缩放」（点击输入精确比例 5%–800%）调整视图；移动端单指不拖预览，双指捏合/分离=缩小/放大预览图（指心移动=平移） |
 | 下载 PNG | SVG → data:URL → `<img>` → Canvas（倍率缩放）→ `toBlob` → `<a download>` 触发浏览器另存为 |
-| 导出背景色 / 透明底 | `input[type=color]` 底色选择器，Canvas `fillRect` 填色；透明底勾选优先并联动置灰；预览画布实时同步底色（`syncStageBg`），透明底时预览显示棋盘格、导出真透明 |
+| 导出背景色 / 透明底 | 底色选择器（点击弹色板弹层，含「自定义…」编程唤起原生取色器——iOS 无原生取色器也能改底色），Canvas `fillRect` 填色；透明底勾选优先并联动置灰；预览画布实时同步底色（`syncStageBg`），透明底时预览显示棋盘格、导出真透明 |
 | 外观系统 | 上传图片压缩（最长边 1920 JPEG85%）设为全局背景层；填充/缩放/模糊/遮罩四参数实时可调；48×48 桶量化 + 饱和度加权提取主色写 `--dominant`（主标题着色，过暗自动提亮）；`body.has-bg` 启用玻璃模糊与文字差值混合；外观含 dataURL 整体持久化 `mtp.appearance` |
 
 ### 2.2 模块结构（单文件内）
@@ -64,7 +64,7 @@ graph TD
 | 视口 | `zoomAt/fitView` | 变换 = `translate(tx,ty) scale(s)`；滚轮不动点公式 `tx' = mx-(mx-tx)k`；新图渲染后自动适应窗口 |
 | 导出 | `exportPNGBlob(mult, transparent, bgColor)` | 1×/2×/3× 倍率；Canvas 上限保护（单边 16384 / 总像素 2^28，超限自动降倍率）；超长内容 data:URL 自动降级 blob:URL；文件名前缀按模式 `mermaid-/svg-/html-` |
 | 编辑器 | 事件层 | 400ms 防抖实时渲染；localStorage 自动保存；Tab 插入两空格 |
-| 测试钩子 | `window.__mtp` | `render / exportBlob / detect / setZoom / fit / state` |
+| 测试钩子 | `window.__mtp` | `render / exportBlob / detect / setZoom / zoomTo / fit / state` |
 
 ## 3. 文件清单
 
@@ -258,7 +258,7 @@ interface MteEdge {
 
 ```text
 ┌──────────────────────────────────────────────────────────────┐
-│ header: logo · 【撤销 · 重做 · 导入 · 保存】(编辑模式才显示) · Agent · 外观 │
+│ header: logo · 【撤销 · 重做 · 导入 · 下载mte】(编辑模式才显示) · Agent · 外观 │
 ├────────────┬─────────────────────────────────┬───────────────┤
 │ 左栏双 Tab  │ 画布（编辑模式 = 自绘 SVG 交互层） │ （现有两栏结构 │
 │ [源码|编辑] │        （预览模式 = mermaid 渲染）  │  不变，可拖分栏）│
@@ -277,10 +277,10 @@ interface MteEdge {
 - **连线（点击式）**：组件面板点「箭头/实线/虚线」卡片进入连线模式 → 所有节点显示 8 锚点（四角+四边中点）→ 点起点锚点 → 点终点锚点建边（锚点存 `doc.layout.edge[edgeId] = {a, b}`，不回写源码）；点节点任意位置=兜底吸附最近锚点；Esc 取消。
 - **边编辑**：点边选中显示三个编辑点——首/尾方块改端点（可换节点）；中点圆拖弯折（二次贝塞尔反解控制点）；双击边线或标注改边标注（命令 `edge.label` 可撤销，序列化转 `---|文本|` 管道语法）。命中判定无条件覆盖首尾；端点覆盖按端生效（改一端即生效，未覆盖端回退中心裁剪）。
 - **标注组件（label）**：无边框、背景透明的文字标注；点选优先级最高；序列化自动注入 `fill:none,stroke:none` 的 classDef，parser 读回同款节点自动识别为 label（round-trip 保形）。
-- **辅助线网格**：编辑画布最底层行列虚线（SVG pattern，rect ±60000 铺满整个可视底色区）；配色自适应底色——透明底=中性灰，纯色底=低饱和度反色（HSL 色相 +180°），有背景图时用外观辅助色 `--aux`；「视图」分组滑块开关 + 间距 10–500px，`localStorage['mte.grid']` 持久化；序列化前临时摘除网格层——**不进入导出 PNG**。
-- **画布浏览**：编辑与预览模式滚轮均=缩放，空白处拖拽=平移；预览页固定不翻页（上下滚动交给编辑栏自身）。
+- **辅助线网格**：编辑画布最底层行列虚线（SVG pattern，rect ±60000 铺满整个可视底色区）；配色自适应底色——透明底=中性灰，纯色底=低饱和度反色（HSL 色相 +180°），有背景图时用外观辅助色 `--aux`；「视图」分组滑块开关 + 间距 10–500px，`localStorage['mte.grid']` 持久化；序列化前临时摘除网格层——**不进入导出 PNG**。辅助线开启时节点移动/多选移动/缩放自动吸附网格线（左/中/右、上/中/下候选取最小非零修正，阈值 7 屏幕像素换算画布坐标且 ≤间距 1/3；线类组件——边中点/端点拖动与连线模式——不吸附）。
+- **画布浏览**：编辑与预览模式滚轮均=缩放，空白处拖拽=平移；移动端单指拖空白=无操作（不拖预览）、拖节点=移动组件、拖 resize 手柄=缩放组件（命中区触屏放大），双指捏合/分离=缩放预览图、指心移动=平移，进入 pinch 即回弹进行中的组件拖拽；预览页固定不翻页（上下滚动交给编辑栏自身）。
 - **多选**：`selectedIds` 全集 + `selectedId` 主选中；样式改动作用于全部选中节点；移动多选 = `node.moveMany` 一条命令；框选/多选时不显示 resize 手柄、布局分组置灰。「背景不透明度」为节点级样式（↔ 源码 `fill-opacity`，分组/标注同样适用）。
-- **保存**：`.mte` sidecar（JSON：`{schemaVersion, source, doc, savedAt}`）经 `<a download>` 落盘；`mtp.doc` 快照 1s 节流写 localStorage，刷新恢复编辑现场（含手工布局）。
+- **下载mte**（按钮原名「保存」）：`.mte` sidecar（JSON：`{schemaVersion, source, doc, savedAt}`）经 `<a download>` 落盘；`mtp.doc` 快照 1s 节流写 localStorage，刷新恢复编辑现场（含手工布局）。
 - 编辑栏配色：分组标题/激活 Tab = 背景图突出色 `--vivid`；正文与标签 = 背景图主色 `--dominant`；无背景图用 `:root` 默认紫。
 
 ### 5.5 单文件模块划分
@@ -316,7 +316,7 @@ interface MteEdge {
 ### 5.7 内置组件与分组
 
 - 内置组件：矩形、圆角、菱形、圆柱、圆、Stadium、平行四边形、group、label。组件以 `ComponentDefinition`（type/label/thumbnail/createDefault）注册，拖拽进画布落点即坐标。
-- 编辑栏分组（`ToolbarGroup` 声明式控件 → 自动绑定 Command）：组件（形状卡片）、字体（字族/字号/粗斜体/对齐/文本内容）、颜色（字体/背景/边框色，紧凑行式 + 原生取色器）、外观（边框宽度/圆角/虚线开关/背景不透明度）、布局（X/Y/W/H 数值输入 + 适应画布）、视图（辅助线开关 + 间距）。后续加分组只 `register()`，不改 Editor Core。
+- 编辑栏分组（`ToolbarGroup` 声明式控件 → 自动绑定 Command）：组件（形状卡片）、字体（字族/字号/粗斜体/对齐/文本内容）、颜色（字体/背景/边框色，紧凑行式 + 色板弹层：24 预设色/恢复默认/「自定义…」编程唤起原生取色器——iOS 无原生取色器也能改色）、外观（边框宽度/圆角/虚线开关/背景不透明度）、布局（X/Y/W/H 数值输入 + 适应画布）、视图（辅助线开关 + 间距）。后续加分组只 `register()`，不改 Editor Core。
 
 ### 5.8 实现坑清单
 
@@ -350,6 +350,8 @@ interface MteEdge {
 
 **验收**：Chrome headless（`--headless=new --dump-dom` + 注入脚本）152/152 断言全过（2026-10-08），含导入/编辑/样式/移动缩放/删除/撤销重做/round-trip/双向同步/导出/保存恢复/旧功能回归 13 类验收项，外加多选框选、连线与边编辑、标注组件、辅助线网格、编辑栏滚动等迭代项；Pass B 验证刷新恢复含手工布局；编辑模式截图目检通过。
 
+**追加验收（2026-10-08）**：移动端兼容与交互改进——「下载mte」改名、「缩放」输入式精确缩放、网格吸附（移动+缩放，线类除外）、移动端手势（单指拖组件/双指 pinch 缩放平移/pinch 中断回弹）与色板取色——Edge 无头回归 30/30 断言全过（含渲染、按钮文案、弹层、单指不拖预览、双指 pinch、触摸拖动与 resize、吸附贴线、undo、色板改色/恢复默认、底色色板、序列化、无 JS 错误）。
+
 **Roadmap**（未实现）：
 
 - 对齐、网格吸附、小地图、复制粘贴
@@ -357,6 +359,21 @@ interface MteEdge {
 - 「自动重排」按钮：一键丢掉手工 layout，回 mermaid dagre 布局
 - sequence / class 图（新 diagramType + 新 Parser/Serializer 分支，Editor Core 不动）
 - MCP 工具 `mtp_edit`（Agent 直接改图，走 `__mtpEdit` 同一内核）
+
+### 5.10 移动端兼容与交互改进（2026-10-08）
+
+> 输入层按 `e.pointerType === 'touch'` 分流（`TOUCH_DEVICE` 媒体查询仅做默认策略，如触屏命中区放大）；编辑核心（MteDoc / Command / Serializer）两端完全共用。
+
+| 项 | 行为 |
+|---|---|
+| 「保存」→「下载mte」 | header 编辑工具组按钮改名（语义=落盘 .mte 文件）；`Ctrl+Alt+S` 快捷键与 `__mtpEdit.saveMte` 不变 |
+| 「1:1」按钮重做为「缩放」 | 点击弹层输入精确比例：5%–800%；≤20 的输入按倍数解释（1.5→150%），>20 按百分数；`zoomTo()` 以视口中心为不动点；`__mtp.zoomTo` 测试钩子新增（只增） |
+| 网格吸附 | 辅助线开启时，节点移动/多选移动/缩放自动吸附网格线（左/中/右、上/中/下候选取最小非零修正，阈值 7 屏幕像素换算画布坐标且 ≤间距 1/3）；线类组件（边中点/端点拖动、连线模式）不吸附 |
+| 单指手势 | 拖节点=移动组件、拖 resize 手柄=缩放（触屏命中区放大：手柄 16px/锚点 6px/边编辑点 15px，命中阈值 18/14/16px）；拖空白=无操作（**不拖预览**，桌面 mouse 平移不变） |
+| 双指手势 | 捏合/分离=缩小/放大预览图，指心移动=平移（`#stage` 捕获阶段手势状态机，缩放范围与桌面同一 clamp 0.05–8）；进入 pinch 即 `Editor.canvas.cancelDrag()` 回弹进行中的拖拽，剩一指回 IDLE 不恢复拖拽 |
+| 色板取色 | iOS Safari 不支持 `<input type="color">`，此前移动端「字体/背景/边框色、导出底色」无法修改；现色块点击统一弹色板（24 预设色 + 恢复默认 + 「自定义…」），MteDoc 不受端影响（无渲染覆盖、不污染文档） |
+
+实现要点：pinch 用捕获阶段监听（不受画布 `stopPropagation` 影响）维护两指 Pointer ID 集；缩放公式 `tx = 指心 - (起始指心 - 起始tx) × ns/startScale` 一步完成缩放+平移；吸附在 Editor 内实现（`gridSnap1 / gridSnapDelta / gridSnapResize`），移动按拖动包围盒吸附、缩放只吸移动中的边。
 
 ## 6. 已知限制
 
@@ -372,7 +389,7 @@ interface MteEdge {
 
 | 钩子 | 方法 |
 |---|---|
-| `window.__mtp` | `render / exportBlob / detect / setZoom / fit / state` |
+| `window.__mtp` | `render / exportBlob / detect / setZoom / zoomTo / fit / state` |
 | `window.__mtpAgent` | Agent 工具内核（detect / render / export），MCP 桥复用 |
 | `window.__mtpEdit` | `enter / exit / isActive / doc / exec / addNode / select / selectMany / updateText / updateStyle / move / resize / del / undo / redo / serialize / importDoc / saveMte / restoreMte / state`（version `'3.0'`） |
 
