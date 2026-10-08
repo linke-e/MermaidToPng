@@ -7,3 +7,8 @@ Desktop.ini
 # 编辑层验证临时目录（run_verify.py 等，本地回归用）
 .tmp_verify/
 .tmp_*.js
+
+# Impeccable 设计上下文（本机生成，不入库）
+PRODUCT.md
+DESIGN.md
+.impeccable/

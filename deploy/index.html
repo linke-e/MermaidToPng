@@ -2492,6 +2492,18 @@ globalThis.mermaid = globalThis.__esbuild_esm_mermaid.default;
   body.has-bg .dim, body.has-bg label.chk, body.has-bg #err, body.has-bg #hint{
     color:var(--aux,var(--fg));
   }
+  /* 亮背景图自适应（has-bg-bright，applyAppearance 按全图平均亮度判定）：
+     内容卡片切深色玻璃、正文色向墨白提亮，保证文字永远落在暗面上（遮罩下限在 JS 侧）。
+     注意：本块必须位于上方 --aux 规则之后（同优先级靠源序取胜） */
+  body.has-bg-bright .card{background:rgba(10,14,26,.58)}
+  body.has-bg-bright button, body.has-bg-bright select, body.has-bg-bright textarea,
+  body.has-bg-bright .dim, body.has-bg-bright label.chk, body.has-bg-bright #err{
+    color:color-mix(in srgb, var(--aux,#8b93a7) 60%, #e6e9f2);
+  }
+  body.has-bg-bright .mte-tab, body.has-bg-bright .eg-row, body.has-bg-bright .swatch-label{
+    color:color-mix(in srgb, var(--dominant,#e6e9f2) 60%, #e6e9f2);
+  }
+  body.has-bg-bright #hint{text-shadow:0 1px 3px rgba(0,0,0,.8), 0 0 14px rgba(0,0,0,.55)}
 
   /* 外观设置面板 */
   #appearancePanel{
@@ -3441,7 +3453,7 @@ function syncStageBg() {
 const bgLayer = $('bgLayer'), bgImg = $('bgImg'), bgMask = $('bgMask'),
       apPanel = $('appearancePanel');
 
-const APPEAR_DEFAULT = { fit: 'cover', zoom: 100, blur: 0, mask: 35, flip: false, dataUrl: null, vivid: null, aux: null, dominant: null };
+const APPEAR_DEFAULT = { fit: 'cover', zoom: 100, blur: 0, mask: 35, flip: false, dataUrl: null, vivid: null, aux: null, dominant: null, luma: null };
 let appearance = Object.assign({}, APPEAR_DEFAULT);
 let apSaveTimer = null;
 
@@ -3455,6 +3467,7 @@ function applyAppearance() {
   document.body.classList.toggle('has-bg', has);
   if (!has) {
     bgImg.removeAttribute('src');
+    document.body.classList.remove('has-bg-bright');
     document.documentElement.style.removeProperty('--vivid');
     document.documentElement.style.removeProperty('--aux');
     document.documentElement.style.removeProperty('--dominant');
@@ -3465,17 +3478,21 @@ function applyAppearance() {
   // 水平翻转与缩放合并：scaleX(-1) 在前，scale 保持 X/Y 同比缩放
   bgImg.style.transform = (appearance.flip ? 'scaleX(-1) ' : '') + 'scale(' + (appearance.zoom / 100) + ')';
   bgLayer.style.filter = appearance.blur > 0 ? 'blur(' + appearance.blur + 'px)' : 'none';
-  bgMask.style.opacity = String(appearance.mask / 100);
-  if (appearance.vivid && appearance.aux && appearance.dominant) {
+  const bright = (appearance.luma == null ? 0 : appearance.luma) >= 0.52;
+  document.body.classList.toggle('has-bg-bright', bright);
+  // 亮图遮罩下限 50%：整体压暗兜底；用户仍可调更高，但不会低于下限
+  bgMask.style.opacity = String(Math.max(appearance.mask, bright ? 50 : 0) / 100);
+  if (appearance.vivid && appearance.aux && appearance.dominant && appearance.luma != null) {
     document.documentElement.style.setProperty('--vivid', appearance.vivid);
     document.documentElement.style.setProperty('--aux', appearance.aux);
     document.documentElement.style.setProperty('--dominant', appearance.dominant);
   } else {
     extractPalette(appearance.dataUrl).then(p => {
-      appearance.vivid = p.vivid; appearance.aux = p.aux; appearance.dominant = p.dominant;
+      appearance.vivid = p.vivid; appearance.aux = p.aux; appearance.dominant = p.dominant; appearance.luma = p.luma;
       document.documentElement.style.setProperty('--vivid', p.vivid);
       document.documentElement.style.setProperty('--aux', p.aux);
       document.documentElement.style.setProperty('--dominant', p.dominant);
+      if (appearance.luma != null) applyAppearance(); // 亮度到位后重算 has-bg-bright 与遮罩下限
       scheduleAppearanceSave();
     }).catch(() => {});
   }
@@ -3514,7 +3531,9 @@ function hslToRgbStr(h, s, l) {
 /* 图片突出色+辅助色：48×48 采样 + 桶量化。
    突出色 vivid = 支持度≥2% 的桶中饱和度最高者（图里最跳的颜色），灰图回退主色；
    辅助色 aux   = 同候选集中与主色、突出色色相均不接近(Δh≥0.12)的加权占比最高者，
-                  单色图找不到时回退主色降饱和提亮；过暗统一提亮保证可读 */
+                  单色图找不到时回退主色降饱和提亮；过暗统一提亮保证可读。
+   同时返回全图平均亮度 luma（0-1，Rec.709 加权）：亮图（≥.52）触发 has-bg-bright——
+   内容卡片切深色玻璃、遮罩设 50% 下限、正文色向墨白提亮（见样式表同名段落） */
 function extractPalette(dataUrl) {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -3526,11 +3545,12 @@ function extractPalette(dataUrl) {
         ctx.drawImage(img, 0, 0, n, n);
         const d = ctx.getImageData(0, 0, n, n).data;
         const buckets = new Map();
-        let total = 0;
+        let total = 0, lumaSum = 0;
         for (let i = 0; i < d.length; i += 4) {
           const r = d[i], g = d[i + 1], b = d[i + 2];
           if (d[i + 3] < 128) continue;
           total++;
+          lumaSum += 0.2126 * r + 0.7152 * g + 0.0722 * b;
           const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
           const w = (mx ? (mx - mn) / mx : 0) + 0.15;
           const key = ((r >> 5) << 6) | ((g >> 5) << 3) | (b >> 5);
@@ -3584,7 +3604,7 @@ function extractPalette(dataUrl) {
         // 主色：加权最高桶（过暗提亮）→ 编辑栏正文文字色（--dominant）
         const [dh, ds, dl] = hslOf(bd);
         const dominant = hslToRgbStr(dh, ds, lite(dl));
-        resolve({ vivid, aux, dominant });
+        resolve({ vivid, aux, dominant, luma: total ? lumaSum / total / 255 : 0 });
       } catch (e) { reject(e); }
     };
     img.onerror = () => reject(new Error('图片加载失败'));
@@ -3609,7 +3629,7 @@ function loadBgFile(file) {
       ctx.fillRect(0, 0, c.width, c.height);
       ctx.drawImage(img, 0, 0, c.width, c.height);
       appearance.dataUrl = c.toDataURL('image/jpeg', 0.85);
-      appearance.vivid = null; appearance.aux = null;
+      appearance.vivid = null; appearance.aux = null; appearance.luma = null;
       applyAppearance();
       scheduleAppearanceSave();
     };
@@ -3628,7 +3648,7 @@ document.addEventListener('pointerdown', e => {
 $('btnUploadBg').onclick = () => $('bgFile').click();
 $('bgFile').onchange = e => { loadBgFile(e.target.files && e.target.files[0]); e.target.value = ''; };
 $('btnRemoveBg').onclick = () => {
-  appearance.dataUrl = null; appearance.vivid = null; appearance.aux = null;
+  appearance.dataUrl = null; appearance.vivid = null; appearance.aux = null; appearance.luma = null;
   applyAppearance(); scheduleAppearanceSave();
 };
 $('apFit').onchange  = e => { appearance.fit  = e.target.value; applyAppearance(); scheduleAppearanceSave(); };
@@ -3726,7 +3746,7 @@ window.__mtp = {
   zoomTo: s => zoomTo(s),
   fit: fitView,
   detect: detectMode,
-  applyBackground: dataUrl => { appearance.dataUrl = dataUrl; appearance.vivid = null; appearance.aux = null; applyAppearance(); scheduleAppearanceSave(); },
+  applyBackground: dataUrl => { appearance.dataUrl = dataUrl; appearance.vivid = null; appearance.aux = null; appearance.luma = null; applyAppearance(); scheduleAppearanceSave(); },
   state,
 };
 
@@ -6700,5 +6720,8 @@ console.info('[MermaidToPng] 外观系统 v6：标题=图片突出色 · 其他�
   Editor.init();          // 编辑层 v3（§9）：面板/按钮/快捷键/编辑栏就绪（不自动进入编辑）
 })();
 </script>
+<!-- impeccable-live-start -->
+<script src="http://localhost:8400/live.js?token=c769ef3c-b689-455b-9793-69d5e6bf75f3"></script>
+<!-- impeccable-live-end -->
 </body>
 </html>
