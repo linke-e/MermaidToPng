@@ -2649,7 +2649,13 @@ globalThis.mermaid = globalThis.__esbuild_esm_mermaid.default;
   /* 边编辑三点：首/尾方块（点击改端点）、中点圆（拖动弯折） */
   #mteCanvas .mte-endpt{fill:#ffffff;stroke:var(--accent-a);stroke-width:1.4;rx:1.5}
   #mteCanvas .mte-mid{fill:rgba(124,58,237,.85);stroke:#ffffff;stroke-width:1.6}
+  /* 辅助线网格：颜色由 applyGrid 按底色动态计算（透明底=灰 / 纯色底=低饱和反色）后内联；
+     有背景图时内联清空 → 走下方 --aux 规则。此处紫色仅作 JS 生效前的兜底 */
+  #mteCanvas .mte-gridln{fill:none;stroke:rgba(124,58,237,.32);stroke-width:1;stroke-dasharray:6 8}
+  body.has-bg #mteCanvas .mte-gridln{stroke:var(--aux,#8b93a7);opacity:.6}
   #mteCanvas g.mte-edge{cursor:pointer}
+  /* 边标注文本：可命中（双击改标注文本，同标注组件） */
+  #mteCanvas g.mte-edge text{pointer-events:all;cursor:text}
   body.edit-mode #stage{cursor:default}
   body.edit-mode #stage.grabbing{cursor:grabbing}
   /* 画布内文本编辑浮层 */
@@ -4705,6 +4711,23 @@ window.Editor = (function () {
           },
         };
       }
+      case 'edge.label': {                          // 修改边标注文本（双击边/边标注，交互同标注组件）
+        let oldLbl = null, hadLbl = false;
+        return {
+          at: Date.now(), label: '改连线标注',
+          apply(d0) {
+            const e = d0.edges.find(x => x.id === p.id);
+            if (!e) return;
+            if (!hadLbl) { hadLbl = true; oldLbl = e.label || null; }
+            e.label = p.text ? p.text : null;
+          },
+          revert(d0) {
+            if (!hadLbl) return;
+            const e = d0.edges.find(x => x.id === p.id);
+            if (e) e.label = oldLbl;
+          },
+        };
+      }
       case 'edge.anchor': {                         // 修改边端点：end='a'|'b'，v=锚点索引 0-7，nodeId 可换端点节点
         let oldV = null, oldNode = null, had = false;
         return {
@@ -4824,10 +4847,58 @@ window.Editor = (function () {
     });
 
   /* ---------- 9.4 Editor.canvas：自绘 SVG 交互层（D2） ---------- */
-  let gEdges = null, gGroups = null, gNodes = null, gOverlay = null, cDefs = null;
+  let gEdges = null, gGroups = null, gNodes = null, gOverlay = null, cDefs = null, gGrid = null;
   let drag = null;                                    // 拖拽会话：move / multi-move / resize / marquee
   const liveBoxes = new Map();                        // 拖拽中的临时几何（id → {x,y,w,h}），pointerup 清空
   const D = () => api.doc;
+  /* ---- 辅助线网格（视图分组控制）：行列虚线、间距可调、localStorage('mte.grid') 持久化 ---- */
+  let gridCfg = { show: true, gap: 50 };
+  try {
+    const gsaved = JSON.parse(localStorage.getItem('mte.grid') || 'null');
+    if (gsaved && typeof gsaved.show === 'boolean' && Number(gsaved.gap) >= 10)
+      gridCfg = { show: gsaved.show, gap: Math.max(10, Math.min(500, Math.round(gsaved.gap))) };
+  } catch (_) {}
+  /* 底色 → 辅助线配色：透明底 = 易看清的中性灰；纯色底 = 该色低饱和度的反色
+     （HSL 色相 +180°、饱和度压到 ≤35%、明度反向拉开——任何底色上都可辨且不抢内容） */
+  function gridColorForBg(bgHex, transparent) {
+    if (transparent) return 'rgba(136,140,148,.55)';
+    const m = /^#([0-9a-f]{6})$/i.exec(String(bgHex || ''));
+    if (!m) return 'rgba(124,58,237,.32)';
+    const num = parseInt(m[1], 16);
+    const r = (num >> 16 & 255) / 255, g = (num >> 8 & 255) / 255, b = (num & 255) / 255;
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2;
+    let h = 0, s = 0;
+    if (mx !== mn) {
+      const d = mx - mn;
+      s = l > .5 ? d / (2 - mx - mn) : d / (mx + mn);
+      if (mx === r) h = (g - b) / d + (g < b ? 6 : 0);
+      else if (mx === g) h = (b - r) / d + 2;
+      else h = (r - g) / d + 4;
+      h *= 60;
+    }
+    const h2 = (h + 180) % 360, s2 = Math.min(.35, s);
+    const l2 = l >= .5 ? Math.max(.30, l - .40) : Math.min(.70, l + .40);
+    return 'hsla(' + h2.toFixed(0) + ',' + Math.round(s2 * 100) + '%,' + Math.round(l2 * 100) + '%,.5)';
+  }
+  function applyGrid() {
+    if (!gGrid) return;
+    const pat = gGrid.querySelector('pattern'), rc = gGrid.querySelector('rect');
+    if (!pat || !rc) return;
+    /* 几何先于显隐更新：隐藏时调间距也要生效，否则重新打开会显示旧间距 */
+    const g = Math.max(10, Math.min(500, Math.round(gridCfg.gap) || 50));
+    pat.setAttribute('width', g); pat.setAttribute('height', g);
+    const gpath = pat.querySelector('path');
+    gpath.setAttribute('d', 'M ' + g + ' 0 L 0 0 0 ' + g);
+    rc.style.display = gridCfg.show ? '' : 'none';
+    /* 配色跟随底色：有背景图交给 CSS（--aux 随变量自动更新），否则按透明底/纯色底计算内联 */
+    if (document.body.classList.contains('has-bg')) gpath.style.stroke = '';
+    else gpath.style.stroke = gridColorForBg($('pngBg').value, $('pngTransparent').checked);
+  }
+  function persistGrid() { localStorage.setItem('mte.grid', JSON.stringify(gridCfg)); }
+  ['input', 'change'].forEach(ev => $('pngBg').addEventListener(ev, () => applyGrid()));
+  $('pngTransparent').addEventListener('change', () => applyGrid());
+  /* 背景图上传/移除切 body.has-bg → 辅助线在「--aux(CSS)」与「按底色计算(内联)」间切换 */
+  new MutationObserver(() => applyGrid()).observe(document.body, { attributes: true, attributeFilter: ['class'] });
   const canvas = {
     svg: null,
     linkPending: null,                                // 连线模式：{kind, from:{id,a}|null}
@@ -4847,15 +4918,23 @@ window.Editor = (function () {
       gOverlay = svgEl('g', { 'pointer-events': 'none' });
       /* 手柄需要独立接收指针事件 */
       gOverlay.setAttribute('pointer-events', 'none');
-      svg.append(cDefs, gEdges, gGroups, gNodes, gOverlay);
+      /* 辅助线网格层：最底层、不接事件；导出（syncExport）时临时摘除 */
+      gGrid = svgEl('g', { 'pointer-events': 'none' });
+      /* 辅助线直接铺满整个可视底色区（±60000 远超任何视口；svg overflow:visible + stage overflow:hidden，
+        画布 doc 范围外同样有线）；pattern 以画布原点对齐，线位即全局坐标 */
+      gGrid.innerHTML = '<pattern id="mteGridP" patternUnits="userSpaceOnUse" width="50" height="50">' +
+        '<path class="mte-gridln" d="M 50 0 L 0 0 0 50"/></pattern>' +
+        '<rect x="-60000" y="-60000" width="120000" height="120000" fill="url(#mteGridP)"/>';
+      svg.append(cDefs, gGrid, gEdges, gGroups, gNodes, gOverlay);
       container.appendChild(svg);
       this.svg = svg;
       this.bindEvents(svg);
       this.applyCanvasSize();
+      applyGrid();
     },
     unmount() {
       if (this.svg && this.svg.parentNode) this.svg.parentNode.removeChild(this.svg);
-      this.svg = null; gEdges = gGroups = gNodes = gOverlay = null;
+      this.svg = null; gEdges = gGroups = gNodes = gOverlay = null; gGrid = null;
       drag = null; liveBoxes.clear();
       this.linkPending = null; this.edgeEndPending = null;
       edgeLiveMid = null;
@@ -4906,7 +4985,11 @@ window.Editor = (function () {
     syncExport() {
       if (!this.svg || !D()) return;
       this.applyCanvasSize();
-      state.lastRawSvg = new XMLSerializer().serializeToString(this.svg);
+      /* 辅助线是编辑辅助：序列化前临时摘除，导出 PNG 不含网格 */
+      const gg = gGrid, host = gg && gg.parentNode;
+      if (host) host.removeChild(gg);
+      try { state.lastRawSvg = new XMLSerializer().serializeToString(this.svg); }
+      finally { if (host) host.insertBefore(gg, cDefs.nextSibling); }
     },
     screenToCanvas(cx, cy) {
       const r = stage.getBoundingClientRect();
@@ -4931,6 +5014,7 @@ window.Editor = (function () {
           : (api.selectedIds.size ? [...api.selectedIds][api.selectedIds.size - 1] : null);
       }
       if (api.selectedEdge && !d.edges.some(x => x.id === api.selectedEdge)) api.selectedEdge = null;
+      if (gGrid) applyGrid();                          // 底色/外观变化后辅助线配色即时跟随
       this.drawOverlay();
       this.applyCanvasSize();
     },
@@ -5233,7 +5317,9 @@ window.Editor = (function () {
       });
       svg.addEventListener('dblclick', (ev) => {
         const g = ev.target.closest && ev.target.closest('.mte-node');
-        if (g && g.dataset.id) { ev.stopPropagation(); textEd.open(g.dataset.id); }
+        if (g && g.dataset.id) { ev.stopPropagation(); textEd.open(g.dataset.id); return; }
+        const eg = ev.target.closest && ev.target.closest('.mte-edge');
+        if (eg && eg.dataset.id) { ev.stopPropagation(); textEd.openEdge(eg.dataset.id); }   // 双击边/边标注改文本（同标注组件）
       });
     },
     onDragMove(ev) {
@@ -5469,12 +5555,17 @@ window.Editor = (function () {
     const La = (live && live.get && live.get(e.from)) || d.layout.node[e.from];
     const Lb = (live && live.get && live.get(e.to)) || d.layout.node[e.to];
     if (!La || !Lb) return null;
-    /* 有吸附锚点（连线组件创建）→ 端点固定在锚点上；否则中心连线裁剪到包围盒 */
+    /* 有吸附锚点（连线组件创建/边端点重选）→ 有覆盖的一端固定在锚点上；无覆盖端回退中心裁剪。
+       2026-10-08 修复：原条件要求 a、b 同时存在——导入的边第一次只改一端时整体回退默认分支，画布不动，
+       直到另一端也改了才一起生效；现按端生效（单端覆盖即时渲染） */
     const anch = d.layout.edge && d.layout.edge[e.id];
-    if (anch && anch.a != null && anch.b != null) {
-      return { p1: nodeAnchors(La)[anch.a], p2: nodeAnchors(Lb)[anch.b] };
-    }
     const ca = { x: La.x + La.w / 2, y: La.y + La.h / 2 }, cb = { x: Lb.x + Lb.w / 2, y: Lb.y + Lb.h / 2 };
+    if (anch && (anch.a != null || anch.b != null)) {
+      return {
+        p1: anch.a != null ? nodeAnchors(La)[anch.a] : clipToBox(La, ca, cb),
+        p2: anch.b != null ? nodeAnchors(Lb)[anch.b] : clipToBox(Lb, cb, ca),
+      };
+    }
     return { p1: clipToBox(La, ca, cb), p2: clipToBox(Lb, cb, ca) };
   }
   function drawEdge(e, live) {
@@ -5539,7 +5630,7 @@ window.Editor = (function () {
 
   /* ---- 画布内文本编辑浮层（9.3：确认才入命令栈） ---- */
   const textEd = {
-    activeId: null, canceling: false,
+    activeId: null, activeKind: 'node', canceling: false,
     ta: null, box: null,
     open(id) {
       const d = D();
@@ -5548,6 +5639,7 @@ window.Editor = (function () {
       this.ta = this.ta || document.querySelector('#mteText textarea');
       this.box = $('mteText');
       this.activeId = id;
+      this.activeKind = 'node';
       const st = nodeStyleOf(n);
       const ta = this.ta;
       ta.value = n.text;
@@ -5567,10 +5659,56 @@ window.Editor = (function () {
       ta.focus();
       ta.select();
     },
+    /* 双击边/边标注 → 改连线标注文本（浮层交互同标注组件：Enter 保存/Shift+Enter 换行/Esc 取消/失焦保存） */
+    openEdge(id) {
+      const d = D();
+      const e = d.edges.find(x => x.id === id);
+      if (!e) return;
+      const geo = edgeGeom(e);
+      if (!geo) return;
+      const mid = (d.layout.edge && d.layout.edge[id] && d.layout.edge[id].mid) || null;
+      let lx, ly;
+      if (mid) { lx = mid.x; ly = mid.y; }
+      else {
+        const p1 = geo.p1, p2 = geo.p2;
+        const dx = p2.x - p1.x, dy = p2.y - p1.y;
+        const horiz = Math.abs(dx) >= Math.abs(dy);
+        const c1 = horiz ? { x: p1.x + dx / 2, y: p1.y } : { x: p1.x, y: p1.y + dy / 2 };
+        const c2 = horiz ? { x: p2.x - dx / 2, y: p2.y } : { x: p2.x, y: p2.y - dy / 2 };
+        lx = (p1.x + 3 * c1.x + 3 * c2.x + p2.x) / 8;
+        ly = (p1.y + 3 * c1.y + 3 * c2.y + p2.y) / 8;
+      }
+      this.ta = this.ta || document.querySelector('#mteText textarea');
+      this.box = $('mteText');
+      this.activeId = id;
+      this.activeKind = 'edge';
+      const ta = this.ta;
+      ta.value = e.label || '';
+      ta.style.fontFamily = '"Segoe UI","Microsoft YaHei",sans-serif';
+      ta.style.fontSize = Math.max(11, THEME.edgeLabelSize * state.scale) + 'px';
+      ta.style.fontWeight = 'normal';
+      ta.style.fontStyle = 'normal';
+      ta.style.color = THEME.edgeLabel;
+      ta.style.background = 'rgba(10,14,26,.35)';
+      ta.style.textAlign = 'center';
+      const el = this.box, W = 120, H = 30;
+      el.style.left = (state.tx + lx * state.scale - W / 2) + 'px';
+      el.style.top = (state.ty + (ly - 6) * state.scale - H / 2) + 'px';
+      el.style.width = W + 'px';
+      el.style.height = H + 'px';
+      el.style.display = 'block';
+      ta.focus();
+      ta.select();
+    },
     confirm() {
       if (!this.activeId) return;
-      const id = this.activeId, val = this.ta.value;
+      const id = this.activeId, val = this.ta.value, kind = this.activeKind || 'node';
       this.close();
+      if (kind === 'edge') {
+        const e0 = D().edges.find(x => x.id === id);
+        if (e0 && (e0.label || '') !== val) commands.exec('edge.label', { id, text: val });
+        return;
+      }
       const n = model.nodeOf(D(), id);
       if (n && n.text !== val) commands.exec('node.text', { id, text: val });
     },
@@ -5764,7 +5902,7 @@ window.Editor = (function () {
     return '#263048';
   }
 
-  /* 内置五分组（§9.6 表格）：组件 / 字体 / 颜色 / 外观 / 布局——声明式注册，UI 自动绑定 Command */
+  /* 内置六分组（§9.6 表格）：组件 / 字体 / 颜色 / 外观 / 布局 / 视图——声明式注册，UI 自动绑定 Command */
   registry.registerGroup({
     id: 'components', title: '组件', order: 1, needsSel: false, open: true,
     build(body) {
@@ -5961,6 +6099,29 @@ window.Editor = (function () {
       fit.addEventListener('click', () => { canvas.shrinkToFit(); sync.writeCode(); });
       br.appendChild(fit);
       body.appendChild(br);
+    },
+  });
+  /* 「视图」分组（§9.6 扩展合同：新分组=registerGroup）：画布级设置，非节点属性 */
+  registry.registerGroup({
+    id: 'view', title: '视图', order: 6, needsSel: false, open: true,
+    build(body) {
+      const r1 = this.row(body, '辅助线');
+      r1.title = '画布行列虚线辅助线：帮助对齐组件与连线（编辑辅助，不进入导出 PNG）';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox'; cb.checked = gridCfg.show;
+      const wrap = document.createElement('span'); wrap.className = 'mte-switch';
+      const tk = document.createElement('span'); tk.className = 'tk';
+      wrap.append(cb, tk);
+      wrap.addEventListener('change', () => { gridCfg.show = cb.checked; persistGrid(); applyGrid(); });
+      r1.appendChild(wrap);
+      const r2 = this.row(body, '间距 (px)');
+      r2.title = '辅助线间距（画布坐标单位，10–500，回车/失焦生效）';
+      const num = this.numInput(r2, 10, 500, 10, v => {
+        gridCfg.gap = clamp(parseInt(v, 10) || 50, 10, 500);
+        persistGrid(); applyGrid();
+      });
+      num.value = gridCfg.gap;
+      this.syncer(() => { cb.checked = gridCfg.show; num.value = gridCfg.gap; });
     },
   });
 
@@ -6208,7 +6369,7 @@ window.Editor = (function () {
     if (!api.active) return;
     if (type === 'undo' || type === 'redo' || type === 'node.add' || type === 'node.delete' ||
         type === 'nodes.delete' || type === 'node.moveMany' || type === 'edge.add' || type === 'edge.delete' ||
-        type === 'edge.mid' || type === 'edge.anchor')
+        type === 'edge.mid' || type === 'edge.anchor' || type === 'edge.label')
       canvas.render();
     else if (p && p.id) canvas.refreshNode(p.id);
     if (panel.inited) panel.syncSelection();
