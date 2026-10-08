@@ -275,19 +275,13 @@ MermaidToPng/
 
 e2e 合计 18/18（file:// 与 http 两种页面来源 × 配对/列表/三语法渲染/沙箱/断开感知/结果体积）。
 
-### 8.9 RoadMap
-
-- CLI 包装（`node agent/mtp-mcp.mjs --interactive` 命令行配对/渲染）——脚本化需求出现再做
-- `theme` 参数（mermaid 主题切换，需 re-initialize）/ SVG 直出（信封加字段即可）
-- 多页面 / 多 Agent 并发（当前单页面单 Agent 够用）
-
 ## 9. 编辑层 v3：「进入编辑」所见即所得
 
 > **状态：架构定稿，未实现——实现交 Zcode，本文档即实现合同。**
 > 业务场景：用户导入一份 Mermaid 逻辑图，点「进入编辑」→ 页面进入编辑模式、展开编辑栏（分组：组件/字体/颜色/外观/布局）→ 从组件分组拖节点进画布、调整大小、双击直接改文字，改字体/字体颜色/背景色/边框色等 → 实时所见即所得 → 自动生成最新 Mermaid 源码，可保存/复制/导出。
 > 参考：GPT 分析（`D:\Users\lt\Downloads\Untitled-1.md`）裁剪为单文件零依赖现实。保留其三支柱——Document Model 唯一编辑状态、Command 总线、Registry 扩展；舍弃 React/Vite/多文件工程化。
 
-### 9.0 三个定稿决策（Zcode 不要再改）
+### 9.0 三个定稿决策
 
 | # | 决策 | 理由 |
 |---|---|---|
@@ -350,7 +344,7 @@ interface MteEdge {
 }
 ```
 
-### 9.3 模式与 UI（2026-10-08 修订：编辑模式唯一入口 = 左栏「编辑」Tab）
+### 9.3 模式与 UI
 
 ```text
 ┌──────────────────────────────────────────────────────────────┐
@@ -377,7 +371,7 @@ interface MteEdge {
 - 多选规则：`selectedIds` 全集 + `selectedId` 主选中（最后一个）；样式改动作用于全部选中节点（逐节点命令，各自可 undo）；移动多选 = `node.moveMany` 一条命令；框选/多选时不显示 resize 手柄、布局分组置灰。颜色组为紧凑行式（一个子项一行一个色块，点击色块唤起原生取色器）；外观组的「背景不透明度」为**节点级样式**（`style.bgOpacity` ↔ 源码 `fill-opacity`，作用于选中组件，**分组/标注同样适用**，改其他颜色不会重置它）；开关类控件（虚线/透明底）为左右滑块（`.mte-switch`，checked=霓虹紫）。
 - 保存：`.mte` sidecar（JSON：`{schemaVersion, source, doc, savedAt}`）经 `<a download>` 落盘；「复制源码」仍用 CODE 页复制按钮（退出编辑后源码已回写）。
 
-### 9.4 单文件模块划分（页面内命名空间，全部增量进主文件）
+### 9.4 单文件模块划分
 
 | 命名空间 | 职责 | 关键接口 |
 |---|---|---|
@@ -438,7 +432,7 @@ interface ToolbarGroup {                 // ToolbarGroupRegistry.register()
 
 后续加"连接线/高级"分组 = 只 `register()`，不改 Editor Core。
 
-### 9.7 与现有管线的集成（复用清单）
+### 9.7 与现有管线的集成
 
 | 现有资产 | 编辑层用法 |
 |---|---|
@@ -451,7 +445,7 @@ interface ToolbarGroup {                 // ToolbarGroupRegistry.register()
 
 `.mte` sidecar 的存在让"手工布局"可持久：重新打开时 `parse → layout 覆盖`，还原编辑现场；只有裸源码时退回 mermaid 自动布局（导入流程：先用 mermaid 渲染一次取自然坐标当 layout 初值——单次 `renderMermaid` 后读各节点 `transform` 填 layout，用户看到的编辑画布初始即 mermaid 布局，衔接无缝）。
 
-### 9.8 坑清单（Zcode 必读）
+### 9.8 坑清单
 
 1. **mermaid.parse 的 AST 不公开不稳定** → 只当语法校验器；结构解析自研（§9.4 `Editor.parser`）。别试图 `JSON.stringify(parse结果)` 挖节点。
 2. **自研解析器写死白名单子集**：`id`、`id["label"]`、`id(label)`、`id{label}`、`id([label])`、`id[(label)]`、链式 `A-->B-->C`、`A & B --> C`（拆多条边）、`-->|lbl|` / `---` / `-.->` / `==>`、`subgraph id [title] … end`、`classDef`/`class`/`style`、`%%注释`、空行。**未覆盖语法不丢**：原样存 `meta.extensions.rawLines`，进编辑时 warnings 提示"第 N 行语法未支持，编辑将忽略"。宁可诚实降级，不要静默吞。
@@ -484,7 +478,7 @@ interface ToolbarGroup {                 // ToolbarGroupRegistry.register()
 </head>'` 唯一序列锚定；插入后必须立刻 `node --check`。
 26. **flex column 滚动容器的 overflow:hidden 子项会被静默压缩**：`#editTab`（flex column + overflow-y:auto）里的 `#mtePanelRoot` 因自身 `overflow:hidden`（圆角裁剪）使 CSS「自动最小尺寸」归零，被压缩到容器可视高度——scrollHeight==clientHeight、滚动条根本不出现、展开的分组被裁掉（症状「编辑区展开后无法全部展示」）。修法 = 该子项加 `flex:none`（2026-10-08）。凡「容器明明有 overflow:auto 却滚不动」先查这个组合。
 
-### 9.9 验收清单（Zcode 交付门槛，全过才算完）
+### 9.9 验收清单
 
 > **验收结果（2026-10-07 首版 13/13；2026-10-08 五轮迭代后 134/134 全过）。** Chrome headless（`--headless=new --dump-dom` + 注入脚本）跑 134 条断言（Pass A 128 条：验收 1–11、13 + 第 14–19 组「Tab 唯一入口/双击与 Enter 保存/Ctrl+Alt+S/多选框选/批量命令/节点级不透明度（分组适用、改色不重置）/vivid 主题色/紧凑颜色组/连线点击式全锚点/边编辑三点（拖弯折·改端点·换节点·删边）/标注组件 round-trip/源码边端点可编辑/编辑栏滚动看全分组 + 预览页固定（滚轮=缩放、PageUp·PageDown 无操作）/favicon 新图标」；Pass B 6 条：验收 12 刷新恢复含手工布局），外加编辑模式截图目检。实现坑已回填 §9.8。
 
@@ -504,7 +498,7 @@ interface ToolbarGroup {                 // ToolbarGroupRegistry.register()
 | 12 | 保存/恢复 | `.mte` 落盘 → 刷新页面恢复编辑现场（含 layout） |
 | 13 | 旧功能回归 | `__mtp` 现有钩子（render/exportBlob/detect/setZoom/fit/state）全过；MCP 桥 `mtp_render` 不受影响 |
 
-### 9.10 Roadmap（阶段 2+，接口已预留）
+### 9.10 Roadmap
 
 - Edge 编辑 UI（拖端点连线、改箭头/标签/线色）——模型/命令/Validator MVP 已含
 - 多选、框选、对齐、网格吸附、小地图、复制粘贴
