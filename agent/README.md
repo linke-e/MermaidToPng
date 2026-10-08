@@ -1,42 +1,43 @@
-# MermaidToPng Agent 接口层 ：桥模式
+# MermaidToPng Agent Interface: Bridge Mode
 
-> 让任意 Agent 在会话内直接「图表源码 → PNG 落盘」。
-> **工具全部在网页里执行**；本地只有 `agent/mtp-mcp.mjs` 一个纯转发 MCP 桥（零依赖，Node 18+）。
-> 架构与设计决策见 `../ARCHITECTURE.md` §8。**已实现并实测通过**（2026-10-06，e2e 18/18，清单见 §8.8）。
+> Lets any Agent go straight from "diagram source → PNG on disk" within a session.
+> **All tools execute inside the web page**; locally there is only `agent/mtp-mcp.mjs`, a pure-forwarding MCP bridge (zero dependencies, Node 18+).
+> Architecture and design decisions: `../ARCHITECTURE.md` §4. **Implemented and verified end-to-end** (2026-10-06, e2e 18/18; see §4.6 of that document).
 
 ```
-Agent ──stdio MCP──▶ mtp-mcp.mjs ──HTTP长轮询(127.0.0.1:47870)──▶ 网页自身
-      （纯转发，零工具逻辑）                      （工具全部在这执行）
+Agent ──stdio MCP──▶ mtp-mcp.mjs ──HTTP long-poll(127.0.0.1:47870)──▶ the web page itself
+      （pure forwarding, zero tool logic）                      （all tools execute here）
 ```
 
-页面侧：`MermaidToPng.html` 新增 Agent 面板（端口 + 配对码 + 连接），工具
-`mtp_render` / `mtp_detect` 由页面经 `/hello` 上报，动态出现在 Agent 的 `tools/list`。
+Page side: `MermaidToPng.html` hosts the Agent panel (port + pairing code + connect); the tools
+`mtp_render` / `mtp_detect` are reported by the page via `/hello` and appear dynamically in the Agent's `tools/list`.
 
-页面入口（任选其一，均连同一个本地桥）：
+Page entry points (either one connects to the same local bridge):
 
-- 直接访问 http://www.jjmermaid.xin（推荐，始终最新版）；
-- 或双击本地 `MermaidToPng.html`（file:// 可用，零部署）。
+- Visit http://www.jjmermaid.xin directly (recommended, always the latest version);
+- Or double-click local `MermaidToPng.html` (works over file://, zero deployment).
 
-## 本地文件
+## Local Files
 ```
 agent/
-├── mtp-mcp.mjs    # 桥：stdio MCP ↔ 127.0.0.1 HTTP（/pair /hello /poll /reply /file /bye）
-└── README.md      # 本文档
+├── mtp-mcp.mjs           # bridge: stdio MCP ↔ 127.0.0.1 HTTP (/pair /hello /poll /reply /file /bye)
+├── README.md             # this document (English)
+└── Agent_README_cn.md    # this document (Chinese)
 ```
 
-工具逻辑、配对 UI、PNG 编码全在 `MermaidToPng.html` 页面内。无 Python、无 venv、无第三方依赖。
+Tool logic, the pairing UI and PNG encoding all live inside the `MermaidToPng.html` page. No Python, no venv, no third-party dependencies.
 
-## MCP 注册
+## MCP Registration
 
-在 Agent 的 `mcp_servers` 配置中添加：
+Add to the Agent's `mcp_servers` configuration:
 
 ```json
 "mermaid-to-png": {
   "command": "node",
   "args": [
-    "<项目目录>/agent/mtp-mcp.mjs",
+    "<project dir>/agent/mtp-mcp.mjs",
     "--port", "47870",
-    "--root", "<输出目录>/out",
+    "--root", "<output dir>/out",
     "--root", "~/Downloads"
   ],
   "connect_timeout": 30,
@@ -44,83 +45,83 @@ agent/
 }
 ```
 
-改完重启 Agent 生效。`--root` 可多个：`mtp_render` 的 `output_path` 只能落在这些目录内（相对路径拼第一个 root）；不传则默认 `~/Downloads`。`~` 由桥自己展开（MCP 客户端直启 node 没有 shell，写作 `~/Downloads` 也按真实用户目录处理），目录不存在时落盘会自动创建。端口可用 `--port` 或环境变量 `MTP_MCP_PORT` 覆盖（默认 47870）。
+Restart the Agent for the change to take effect. `--root` may be given multiple times: the `output_path` of `mtp_render` must land inside one of these directories (relative paths join the first root); if omitted, the default is `~/Downloads`. `~` is expanded by the bridge itself (an MCP client launches node directly with no shell, so a literal `~/Downloads` is still resolved to the real user directory), and missing directories are created on drop. The port can be overridden via `--port` or the `MTP_MCP_PORT` environment variable (default 47870).
 
-## 首次使用
+## First Use
 
-1. 打开页面：访问 http://www.jjmermaid.xin 或双击本地 `MermaidToPng.html`（页面须保持开着）
-2. Agent 调用 `mtp_connect` → 返回 6 位配对码 + 端口
-3. 页面右上角「Agent」面板：填端口（47870）+ 配对码 → 点「连接」
-4. 配对成功后 `tools/list` 出现 `mtp_render` / `mtp_detect`，此后全程自动
+1. Open the page: visit http://www.jjmermaid.xin or double-click local `MermaidToPng.html` (keep the page open)
+2. The Agent calls `mtp_connect` → returns a 6-digit pairing code + port
+3. In the page's "Agent" panel (top right): enter the port (47870) + pairing code → click "Connect" (连接)
+4. Once paired, `tools/list` includes `mtp_render` / `mtp_detect`; everything after that is automatic
 
-每次页面断开/刷新或桥重启都会换新配对码；Agent 端工具会报「页面未连接」，重调 `mtp_connect` 取新码再配对即可。
+Every page disconnect/refresh or bridge restart rotates the pairing code; Agent-side tools will report "page not connected" — call `mtp_connect` again for the new code and re-pair.
 
-## 手动启动（不想注册 MCP 的客户端）
+## Manual Launch (clients without MCP registration)
 
-Agent 没有本桥的 MCP 注册、只有终端时，自己拉起桥（**务必带 `--keep`**：桥默认随 stdin 关闭退出，
-shell 后台/管道方式启动 stdin 会立刻关闭导致静默死亡）：
+If the Agent has no MCP registration for this bridge and only a terminal, launch the bridge yourself (**always pass `--keep`**: the bridge exits when stdin closes by default,
+and a shell background/piped launch closes stdin immediately, killing the bridge silently):
 
 ```bash
-node <项目目录>/agent/mtp-mcp.mjs --port 47870 --keep --code AB12CD &
+node <project dir>/agent/mtp-mcp.mjs --port 47870 --keep --code AB12CD &
 curl http://127.0.0.1:47870/status
 # → {"name":"mtp-mcp","version":"2.0.0","paired":false,"port":47870,"code":"AB12CD"}
 ```
 
-- `--code`：固定配对码（6 位大写字母数字），重启不再换码；不传则随机
-- `--keep`：stdin 关闭不退出，以独立本地服务模式驻留（此模式 MCP stdio 不可用，仅 HTTP）
-- `/status` 对非浏览器请求（curl / node / Agent 脚本）直接返回 `code`，浏览器 fetch 拿不到（防恶意网页自动配对）
+- `--code`: fixed pairing code (6 uppercase alphanumeric chars); survives restarts; random if omitted
+- `--keep`: don't exit when stdin closes; stay resident as a standalone local service (MCP stdio unavailable in this mode, HTTP only)
+- `/status` returns `code` directly to non-browser requests (curl / node / Agent scripts); browser fetch cannot get it (prevents malicious pages from auto-pairing)
 
-拿到码后二选一：
+Once you have the code, either:
 
-1. 告诉用户在页面 Agent 面板填码连接（流程同上）；
-2. **把带参链接发给用户，点开即连**：`http://www.jjmermaid.xin/?mtp=47870:AB12CD`（本地文件亦可：`MermaidToPng.html?mtp=47870:AB12CD`）。
+1. Tell the user to enter it in the page's Agent panel (flow above); or
+2. **Send the user the parameterized link — clicking it connects instantly**: `http://www.jjmermaid.xin/?mtp=47870:AB12CD` (local files work too: `MermaidToPng.html?mtp=47870:AB12CD`).
 
-## Agent 工具
+## Agent Tools
 
 ### `mtp_render(code, output_path, mode?, scale?, transparent?, background?)`
 
-把 Mermaid / SVG / HTML 源码渲染成 PNG 写入 `output_path`（相对路径 = 拼第一个 root）。
+Renders Mermaid / SVG / HTML source into a PNG written to `output_path` (relative paths join the first root).
 
-- `mode`：`auto`（默认，走页面语法检测）/ `mermaid` / `svg` / `html`
-- `scale`：1–3 整数倍率，默认 2；超 Canvas 上限自动降倍率（降级记入 `warnings`）
-- `transparent`：透明底（优先于 `background`）；`background` 默认 `#ffffff`
-- 成功：`{ ok:true, mode, width, height, bytes, path, elapsed_ms, warnings[] }`
-- 失败：`isError` + `{ ok:false, stage, message, detail }`，`stage`∈`detect/render/export/file`，`detail` 含原始 parser 报错
-- PNG 字节经页面→桥 `/file` 直落磁盘，**不进 Agent 上下文**（结果 <4KB）
+- `mode`: `auto` (default, uses the page's syntax detection) / `mermaid` / `svg` / `html`
+- `scale`: integer factor 1–3, default 2; automatically steps down beyond the Canvas limit (recorded in `warnings`)
+- `transparent`: transparent background (takes precedence over `background`); `background` defaults to `#ffffff`
+- Success: `{ ok:true, mode, width, height, bytes, path, elapsed_ms, warnings[] }`
+- Failure: `isError` + `{ ok:false, stage, message, detail }`, `stage`∈`detect/render/export/file`, `detail` contains the raw parser error
+- PNG bytes go page→bridge via `/file` straight to disk and **never enter the Agent's context** (result <4KB)
 
 ### `mtp_detect(code)`
 
-纯语法检测（`detectMode` 包装），返回 `{mode}`，不渲染。
+Pure syntax detection (`detectMode` wrapper), returns `{mode}`, renders nothing.
 
-### `mtp_connect`（桥内置）
+### `mtp_connect` (built into the bridge)
 
-连接状态；未连接时返回配对码与端口，转告用户即可。
+Connection status; when not connected, returns the pairing code and port — just relay them to the user.
 
-## 自测
+## Self-Test
 
-1. 配对后 `mtp_render(code="graph TD; A[中文]-->B", output_path="t1.png")` → 文件在 root 内，PNG magic 正确
-2. 三语法各跑一例（mermaid / svg / html）
-3. 坏 mermaid 输入 → `isError` 且 `detail` 含原始报错
-4. `/file` 越界路径（`../x.png`、root 外绝对路径）→ 403
-5. 页面刷新 → 旧 token 失效，新配对码生成
-6. 连续 5 次调用，无残留 node 进程 / 端口占用
+1. After pairing, `mtp_render(code="graph TD; A[中文]-->B", output_path="t1.png")` → file lands inside a root, PNG magic correct
+2. One example per syntax (mermaid / svg / html)
+3. Bad mermaid input → `isError` with the raw error in `detail`
+4. `/file` path escape (`../x.png`, absolute path outside a root) → 403
+5. Page refresh → old token invalidated, new pairing code generated
+6. Five consecutive calls → no leftover node processes / port occupancy
 
-完整验收清单见 `../ARCHITECTURE.md` §8.8。
+The full acceptance checklist lives in `../ARCHITECTURE.md` §4.6.
 
-## 排障
+## Troubleshooting
 
-| 症状 | 处理 |
+| Symptom | Fix |
 |---|---|
-| `mtp_connect` 一直「未连接」 | 页面没开 / 面板没配对；确认端口填 47870、配对码未过期（每次断开换新码，重调 `mtp_connect` 拿最新的） |
-| 配对码「不对」 | 桥重启或页面断开后已换新码；重调 `mtp_connect` |
-| 渲染报 `render` 阶段错 | 看 `detail` 里的 parser 报错，修源码；页面预览区同时会显示同一错误 |
-| 403 path outside root | `output_path` 不在 `--root` 列表内；用相对路径或去配置里加 root |
-| 页面后台不动了 | 后台标签页节流——把页面标签页保持前台，或常驻一个窗口 |
-| 47870 被占 | 换 `--port`（页面面板同步改） |
-| 手动启动的桥秒退 | 没带 `--keep`：stdin 关闭桥即退出（MCP stdio 生命周期约定）；手动/脚本启动必须 `--keep` |
+| `mtp_connect` keeps saying "not connected" | Page not open / panel not paired; confirm the port is 47870 and the code hasn't expired (every disconnect rotates the code — call `mtp_connect` again for the latest) |
+| Pairing code "wrong" | The bridge restarted or the page disconnected, rotating the code; call `mtp_connect` again |
+| Render fails at the `render` stage | Check the parser error in `detail` and fix the source; the page's preview area shows the same error |
+| 403 path outside root | `output_path` is not inside any `--root`; use a relative path or add a root to the config |
+| Page in background stops responding | Background-tab throttling — keep the tab in the foreground, or keep a dedicated window |
+| 47870 already in use | Switch with `--port` (update the page panel to match) |
+| Manually launched bridge exits instantly | Missing `--keep`: the bridge exits when stdin closes (MCP stdio lifecycle contract); manual/scripted launches must pass `--keep` |
 
-## 维护
+## Maintenance
 
-- `MermaidToPng.html` 改动后同步 `deploy/index.html`（逐字节拷贝）。
-- 线上站点 `http://www.jjmermaid.xin` 部署 `deploy/` 目录内容即可，网页版连用户本地的桥（CORS + Private Network 预检已处理）。
-- `__mtpAgent` 内核与 `window.__mtp` 一样只增不改签名。
+- After changing `MermaidToPng.html`, sync `deploy/index.html` (byte-for-byte copy).
+- The live site `http://www.jjmermaid.xin` serves the `deploy/` directory; the web page connects to the user's local bridge (CORS + Private Network preflight already handled).
+- The `__mtpAgent` core, like `window.__mtp`, only ever gains methods — signatures never change.
