@@ -2722,6 +2722,7 @@ globalThis.mermaid = globalThis.__esbuild_esm_mermaid.default;
   </span>
   <button id="btnAgent" title="Agent 桥：MCP 工具经本地 mtp-mcp 长轮询进本页执行">Agent</button>
   <button id="btnAppearance" title="外观设置 v6（若颜色行为异常，请 Ctrl+F5 强制刷新加载新版）">外观</button>
+  <button id="btnLang" title="Switch to English UI">English</button>
 </header>
 
 <div id="bgLayer" aria-hidden="true"><img id="bgImg" alt=""></div>
@@ -2866,6 +2867,167 @@ const stage = $('stage'), viewport = $('viewport'), codeEl = $('code'),
       errEl = $('err'), zoomLabel = $('zoomLabel'), sizeInfo = $('sizeInfo'),
       hint = $('hint');
 
+/* ================= i18n（2026-10-08）：中英双语界面 =================
+   词典以简体中文原文为键；zh 模式恒等返回，en 模式查表。静态 chrome 由
+   applyLang() 扫描白名单根（文本节点 + title/placeholder/aria-label），
+   原文存 WeakMap 桩，来回切换无损；动态消息经 t()/tf() 在创建时翻译。
+   用户内容（代码、画布节点文本、报错、渲染结果）永不进入扫描范围。
+   注意：部分函数内已有局部变量 t（detectMode/extractPalette 等），那些
+   作用域内不得调用 t()（现无此类调用点）。 */
+const I18N = {
+  /* Agent 面板 */
+  '状态': 'Status', '未连接': 'Not connected', '桥端口': 'Bridge port', '配对码': 'Pairing code',
+  '连接': 'Connect', '断开': 'Disconnect',
+  'Agent 会调 mtp_connect 告诉你端口和 6 位配对码；桥由 Agent 侧启动（node mtp-mcp.mjs，默认端口 47870）。\n  每次断开/刷新都会换新配对码，重连前先让 Agent 重新取一次。': 'Your Agent calls mtp_connect to get the port and the 6-digit pairing code; the bridge runs Agent-side (node mtp-mcp.mjs, default port 47870).\n  Every disconnect/refresh rotates the pairing code — have the Agent fetch a fresh one before reconnecting.',
+  '连接成功': 'Connected', '已断开连接': 'Disconnected',
+  '令牌失效，请重新配对': 'Token expired, please re-pair', '连接已失效，请重新配对': 'Connection expired, please re-pair',
+  /* 外观面板 */
+  '背景图': 'Background image', '上传图片': 'Upload image', '移除': 'Remove',
+  '填充方式': 'Fill mode', '填满裁剪': 'Cover (crop)', '完整显示': 'Contain (fit)', '拉伸铺满': 'Stretch', '居中原尺寸': 'Centered 1:1',
+  '缩放 (%)': 'Zoom (%)', '模糊程度 (px)': 'Blur (px)', '遮罩强度 (%)': 'Mask strength (%)', '水平翻转': 'Flip horizontally',
+  /* 编辑栏分组与控件 */
+  '操作': 'Actions', '↶ 撤销': '↶ Undo', '↷ 重做': '↷ Redo', '删除': 'Delete',
+  '缩小': 'Zoom out', '放大': 'Zoom in', '适应': 'Fit', '全选': 'Select all', '多选': 'Multi',
+  '组件': 'Components', '矩形': 'Rectangle', '圆角': 'Rounded', '体育场': 'Stadium', '菱形': 'Diamond',
+  '圆柱(库)': 'Cylinder (DB)', '圆': 'Circle', '平行四边形': 'Parallelogram', '分组': 'Group', '标注': 'Label',
+  '箭头': 'Arrow', '实线': 'Solid line', '虚线': 'Dashed line',
+  '字体': 'Font', '文本内容': 'Text', '字族': 'Font family', '默认': 'Default',
+  '无衬线': 'Sans-serif', '衬线': 'Serif', '等宽': 'Monospace',
+  '微软雅黑': 'Microsoft YaHei', '宋体': 'SimSun', '黑体': 'SimHei', '楷体': 'KaiTi',
+  '字号': 'Size', '样式': 'Style', '粗体': 'Bold', '斜体': 'Italic', '对齐': 'Align', '左': 'Left', '中': 'Center', '右': 'Right',
+  '颜色': 'Color', '字体颜色': 'Text color', '背景色': 'Fill color', '边框色': 'Border color',
+  '背景不透明度': 'Fill opacity', '边框宽': 'Border width',
+  '布局': 'Layout', '宽 W': 'W', '高 H': 'H', '适应画布': 'Fit canvas',
+  '视图': 'View', '辅助线': 'Grid guides', '间距 (px)': 'Spacing (px)',
+  /* 左右卡片头 */
+  '源码': 'Code', '编辑': 'Edit', '自动检测': 'Auto detect',
+  'Ctrl+Enter 立即渲染 · 自动保存本地': 'Ctrl+Enter renders now · autosaved locally',
+  '示例': 'Sample', '复制': 'Copy', '清空': 'Clear',
+  '适应窗口': 'Fit window', '缩放': 'Zoom',
+  '2× 高清': '2× HD', '3× 超清': '3× Ultra', '底色': 'BG', '透明底': 'Transparent',
+  '⬇ 下载 PNG': '⬇ Download PNG', '下载mte': '.mte',
+  '外观': 'Appearance', '导入': 'Import',
+  /* 舞台与对话框 */
+  '左侧粘贴 Mermaid / SVG / HTML 代码开始 · 滚轮缩放 / 拖拽移动': 'Paste Mermaid / SVG / HTML code on the left to start · wheel to zoom, drag to pan',
+  '选择颜色': 'Pick a color', '自定义…': 'Custom…', '恢复默认': 'Reset to default', '取消': 'Cancel', '确定': 'OK',
+  '预览缩放比例（5% – 800%）': 'Preview zoom (5% – 800%)', '如 150 或 1.5 = 150%': 'e.g. 150 or 1.5 = 150%',
+  /* title / placeholder / aria-label */
+  '拖动调整分栏': 'Drag to resize the split',
+  '导入 .mte 编辑文档（源码+手工布局）': 'Import a .mte editing document (source + manual layout)',
+  'Agent 桥：MCP 工具经本地 mtp-mcp 长轮询进本页执行': 'Agent bridge: MCP tools reach this page via the local mtp-mcp long-poll',
+  '外观设置 v6（若颜色行为异常，请 Ctrl+F5 强制刷新加载新版）': 'Appearance settings v6 (if colors misbehave, hard-refresh with Ctrl+F5)',
+  '撤销 (Ctrl+Z)': 'Undo (Ctrl+Z)', '重做 (Ctrl+Y)': 'Redo (Ctrl+Y)',
+  '删除选中的组件/连线（移动端没有 Delete 键）': 'Delete the selected components/edges (no Delete key on mobile)',
+  '画布缩小一档（以视口中心为不动点）': 'Zoom the canvas out one step (fixed at the viewport center)',
+  '画布放大一档（以视口中心为不动点）': 'Zoom the canvas in one step (fixed at the viewport center)',
+  '画布适应窗口': 'Fit the canvas to the window',
+  '选中全部组件（Ctrl+A，可批量修改）': 'Select all components (Ctrl+A) for batch editing',
+  '多选模式：点按组件加入/移出选择集（可批量修改）；退出时清空选择集，Esc 或再点退出': 'Multi-select: tap components to add/remove them (batch editing); exiting clears the selection — Esc or tap again to exit',
+  '点击后：依次点选起点/终点锚点绘制连线，Esc 取消': 'Click, then pick start/end anchors in order to draw an edge; Esc to cancel',
+  '选中组件的显示文字': 'Display text of the selected component',
+  '点击打开色板（含自定义取色入口）': 'Open the swatch palette (with a custom color entry)',
+  '选中组件背景的不透明度（10%–100%，分组/标注同样适用，导出 PNG 同步生效）': 'Fill opacity of the selected component (10%–100%; groups/labels included; reflected in PNG export)',
+  '画布行列虚线辅助线：帮助对齐组件与连线（编辑辅助，不进入导出 PNG）': 'Dashed grid guides to align components and edges (editing aid, never exported)',
+  '辅助线间距（画布坐标单位，10–500，回车/失焦生效）': 'Grid spacing (canvas units, 10–500; applies on Enter/blur)',
+  '源码 = 代码编辑；编辑 = 所见即所得编辑栏': 'Code = source editing; Edit = WYSIWYG toolbar',
+  '语法模式：自动检测 / Mermaid / SVG / HTML': 'Syntax mode: auto detect / Mermaid / SVG / HTML',
+  '插入示例流程图': 'Insert a sample flowchart', '复制代码': 'Copy code', '清空代码': 'Clear code',
+  '点击输入精确缩放比例（如 150 或 1.5 = 150%）': 'Click to type an exact zoom (e.g. 150 or 1.5 = 150%)',
+  'PNG 导出倍率': 'PNG export scale',
+  'PNG 背景颜色（勾选透明底时忽略）': 'PNG background color (ignored when transparent is on)',
+  'PNG 使用透明背景（忽略底色）': 'Transparent PNG background (ignores BG color)',
+  '导出 PNG（浏览器将弹出保存位置对话框）': 'Export PNG (the browser will show a save dialog)',
+  '下载 .mte 编辑文档 (Ctrl+Alt+S，仅编辑模式显示)': 'Download the .mte editing document (Ctrl+Alt+S, edit mode only)',
+  '6 位配对码': '6-digit pairing code',
+  '节点文本编辑': 'Node text editing',
+  '在此粘贴 Mermaid / SVG / HTML 代码（自动识别），例如：\ngraph TD\n  A[开始] --> B[结束]': 'Paste Mermaid / SVG / HTML code here (auto-detected), e.g.:\ngraph TD\n  A[Start] --> B[End]',
+  /* 动态消息（t/tf 在创建时翻译） */
+  '请先输入可渲染的 Mermaid / SVG / HTML 代码': 'Enter renderable Mermaid / SVG / HTML code first',
+  '导出失败：': 'Export failed: ',
+  '背景图过大，未能保存到本地持久化（本次会话内仍生效）': 'Background image too large to persist locally (still active for this session)',
+  '请选择图片文件': 'Please choose an image file',
+  '图片读取失败': 'Failed to read the image',
+  '连线模式：点击任意节点的锚点作为起点（Esc 取消）': 'Link mode: click an anchor on any node as the start (Esc to cancel)',
+  '起点已定（{0}）：点击终点锚点完成连线': 'Start set ({0}): click the end anchor to finish the edge',
+  '点击目标节点的新锚点，替换连线起点（Esc 取消）': 'Click the new anchor on the target node to replace the edge start (Esc to cancel)',
+  '点击目标节点的新锚点，替换连线终点（Esc 取消）': 'Click the new anchor on the target node to replace the edge end (Esc to cancel)',
+  '先点选要删除的组件或连线': 'Select a component or edge to delete first',
+  '导入失败：': 'Import failed: ',
+  '已取消连线': 'Linking cancelled', '已取消端点修改': 'Endpoint edit cancelled',
+  '已退出多选模式': 'Multi-select off',
+  '多选模式：点按组件切换选中，可批量修改': 'Multi-select: tap components to toggle them, then edit in batch',
+  '已全选 {0} 个组件': 'Selected all {0} components',
+  '画布上没有组件': 'No components on the canvas',
+  '当前没有编辑文档': 'No editing document',
+  '新节点': 'New node',
+};
+let lang = 'zh';
+try { const l = localStorage.getItem('mtp.lang'); if (l === 'en' || l === 'zh') lang = l; } catch (_) {}
+function t(s) { return lang === 'en' && Object.prototype.hasOwnProperty.call(I18N, s) ? I18N[s] : s; }
+function tf(tpl, ...args) {
+  let out = t(tpl);
+  args.forEach((v, i) => { out = out.split('{' + i + '}').join(v); });
+  return out;
+}
+/* 静态 chrome 翻译：只扫白名单根；原文存桩，来回切换无损。
+   en 方向按词典命中翻译并记账；zh 方向只还原记账过的节点（英文态文本不命中中文词典） */
+const I18N_TOUCHED = new Set(), I18N_ATTR_TOUCHED = new Set(), I18N_STASH = new WeakMap();
+function applyLang() {
+  if (lang === 'zh') {
+    for (const n of I18N_TOUCHED) {
+      const orig = I18N_STASH.get(n);
+      if (typeof orig === 'string' && n.textContent !== orig) n.textContent = orig;
+    }
+    I18N_TOUCHED.clear();
+    for (const rec of I18N_ATTR_TOUCHED) {
+      const stash = I18N_STASH.get(rec.el);
+      if (stash && (rec.a in stash) && rec.el.getAttribute(rec.a) !== stash[rec.a]) rec.el.setAttribute(rec.a, stash[rec.a]);
+    }
+    I18N_ATTR_TOUCHED.clear();
+  } else {
+    const roots = [document.querySelector('header'), ...document.querySelectorAll('.card-h')].filter(Boolean);
+    for (const id of ['agentPanel', 'appearancePanel', 'mtePanelRoot', 'editTab', 'mtpToast', 'hint', 'split', 'mteText', 'zoomDlg', 'swatchDlg', 'code']) {
+      const el = document.getElementById(id);
+      if (el) roots.push(el);
+    }
+    for (const root of roots) {
+      const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      let n;
+      while ((n = w.nextNode())) {
+        const orig = (n.textContent || '').trim();
+        if (!orig || !Object.prototype.hasOwnProperty.call(I18N, orig)) continue;
+        if (!I18N_STASH.has(n)) I18N_STASH.set(n, n.textContent);
+        if (n.textContent !== I18N[orig]) n.textContent = I18N[orig];
+        I18N_TOUCHED.add(n);
+      }
+      for (const el of root.querySelectorAll('*')) {
+        for (const a of ['title', 'placeholder', 'aria-label']) {
+          const cur = el.getAttribute ? el.getAttribute(a) : null;
+          if (cur == null) continue;
+          const key = cur.trim();
+          if (!Object.prototype.hasOwnProperty.call(I18N, key)) continue;
+          let stash = I18N_STASH.get(el);
+          if (!stash || stash.nodeType) { stash = {}; I18N_STASH.set(el, stash); }
+          if (!(a in stash)) stash[a] = cur;
+          if (el.getAttribute(a) !== I18N[key]) el.setAttribute(a, I18N[key]);
+          I18N_ATTR_TOUCHED.add({ el, a });
+        }
+      }
+    }
+  }
+  const b = document.getElementById('btnLang');
+  if (b) {
+    b.textContent = lang === 'en' ? '简体中文' : 'English';
+    b.title = lang === 'en' ? '切换到中文界面' : 'Switch to English UI';
+  }
+  document.documentElement.lang = lang === 'en' ? 'en' : 'zh-CN';
+}
+$('btnLang').addEventListener('click', () => {
+  lang = lang === 'en' ? 'zh' : 'en';
+  try { localStorage.setItem('mtp.lang', lang); } catch (_) {}
+  applyLang();
+});
+
 const state = {
   scale: 1, tx: 0, ty: 0,          // 视图变换（translate + scale，origin 左上）
   vbW: 0, vbH: 0,                  // 当前图自然尺寸（viewBox）
@@ -2889,13 +3051,13 @@ function openSwatch(curHex, onPick, onClear, onCustom) {
   closeSwatch();
   const dlg = document.createElement('div');
   dlg.id = 'swatchDlg';
-  dlg.innerHTML = '<div class="zoom-dlg-card"><div class="zoom-dlg-title">选择颜色'
+  dlg.innerHTML = '<div class="zoom-dlg-card"><div class="zoom-dlg-title">' + t('选择颜色')
     + (curHex ? '（当前 ' + String(curHex).toUpperCase() + '）' : '') + '</div>'
     + '<div class="sw-grid">' + SWATCH_COLORS.map(c =>
         '<button class="sw-c" data-c="' + c + '" style="background:' + c + '" title="' + c + '"></button>').join('')
     + '</div><div class="zoom-dlg-btns">'
-    + (onCustom ? '<button id="swCustom">自定义…</button>' : '')
-    + '<button id="swClear">恢复默认</button><button id="swClose">取消</button></div></div>';
+    + (onCustom ? '<button id="swCustom">' + t('自定义…') + '</button>' : '')
+    + '<button id="swClear">' + t('恢复默认') + '</button><button id="swClose">' + t('取消') + '</button></div></div>';
   document.body.appendChild(dlg);
   swatchDlgEl = dlg;
   const close = () => { dlg.remove(); if (swatchDlgEl === dlg) swatchDlgEl = null; };
@@ -3302,10 +3464,9 @@ function openZoomDlg() {
   closeZoomDlg();
   const dlg = document.createElement('div');
   dlg.id = 'zoomDlg';
-  dlg.innerHTML = '<div class="zoom-dlg-card">'
-    + '<div class="zoom-dlg-title">预览缩放比例（5% – 800%）</div>'
-    + '<input type="text" inputmode="decimal" id="zoomDlgInput" placeholder="如 150 或 1.5 = 150%">'
-    + '<div class="zoom-dlg-btns"><button id="zoomDlgCancel">取消</button><button id="zoomDlgOk" class="primary">确定</button></div>'
+  dlg.innerHTML = '<div class="zoom-dlg-card"><div class="zoom-dlg-title">' + t('预览缩放比例（5% – 800%）') + '</div>'
+    + '<input type="text" inputmode="decimal" id="zoomDlgInput" placeholder="' + t('如 150 或 1.5 = 150%') + '">'
+    + '<div class="zoom-dlg-btns"><button id="zoomDlgCancel">' + t('取消') + '</button><button id="zoomDlgOk" class="primary">' + t('确定') + '</button></div>'
     + '</div>';
   document.body.appendChild(dlg);
   zoomDlgEl = dlg;
@@ -3436,7 +3597,7 @@ async function exportPNGBlob(mult = 2, transparent = false, bgColor = '#ffffff')
   return blob;
 }
 async function exportPNG() {
-  if (!state.lastRawSvg) { alert('请先输入可渲染的 Mermaid / SVG / HTML 代码'); return; }
+  if (!state.lastRawSvg) { alert(t('请先输入可渲染的 Mermaid / SVG / HTML 代码')); return; }
   try {
     const blob = await exportPNGBlob(+$('pngScale').value, $('pngTransparent').checked, $('pngBg').value);
     const a = document.createElement('a');
@@ -3445,7 +3606,7 @@ async function exportPNG() {
     a.download = prefix + '-' + new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-') + '.png';
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-  } catch (e) { alert('导出失败：' + e.message); }
+  } catch (e) { alert(t('导出失败：') + e.message); }
 }
 
 /* ================= 预览背景同步（所见即所得） =================
@@ -3511,7 +3672,7 @@ function scheduleAppearanceSave() {
     try {
       localStorage.setItem('mtp.appearance', JSON.stringify(appearance));
     } catch (e) {
-      alert('背景图过大，未能保存到本地持久化（本次会话内仍生效）');
+      alert(t('背景图过大，未能保存到本地持久化（本次会话内仍生效）'));
     }
   }, 200);
 }
@@ -3621,7 +3782,7 @@ function extractPalette(dataUrl) {
 
 /* 上传背景图：压缩到最长边 1920、JPEG 85%（背景图不关心透明通道） */
 function loadBgFile(file) {
-  if (!file || !/^image\//.test(file.type)) { alert('请选择图片文件'); return; }
+  if (!file || !/^image\//.test(file.type)) { alert(t('请选择图片文件')); return; }
   const fr = new FileReader();
   fr.onload = () => {
     const img = new Image();
@@ -3640,7 +3801,7 @@ function loadBgFile(file) {
       applyAppearance();
       scheduleAppearanceSave();
     };
-    img.onerror = () => alert('图片读取失败');
+    img.onerror = () => alert(t('图片读取失败'));
     img.src = fr.result;
   };
   fr.readAsDataURL(file);
@@ -3866,7 +4027,7 @@ window.__mtpAgentBridge = (function () {
   function toast(text, kind) {           // kind: 'ok' | 'err' | undefined
     const el = $('mtpToast');
     if (!el) return;
-    el.textContent = text;
+    el.textContent = t(text);
     el.className = 'show' + (kind ? ' ' + kind : '');
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => { el.className = ''; }, 2600);
@@ -3875,7 +4036,7 @@ window.__mtpAgentBridge = (function () {
   function setStatus(text, ok) {
     const el = $('agentStatus');
     if (el) {
-      el.textContent = text;
+      el.textContent = t(text);
       el.className = ok === true ? 'ok' : 'bad';
     }
     $('btnAgent')?.classList.toggle('on', ok === true);   // 按钮状态点：绿=已连接
@@ -5000,7 +5161,7 @@ window.Editor = (function () {
     return {
       id: model.genId(api.doc, type === 'group' ? 'sg' : 'n'),
       type: NODE_SIZES[type] ? type : 'rect',
-      text: type === 'group' ? '分组' : type === 'label' ? '标注' : '新节点',
+      text: type === 'group' ? t('分组') : type === 'label' ? t('标注') : t('新节点'),
       style: {},
       ...(type === 'group' ? { children: [] } : {}),
       _w: w, _h: h,
@@ -5509,7 +5670,7 @@ function gridSnapResize(box, dir) {                  // 缩放吸附：只吸移
           const lp = this.linkPending;
           if (!lp.from) {
             lp.from = { id: hit.id, a: hit.a };
-            toastMte('起点已定（' + hit.id + '）：点击终点锚点完成连线');
+            toastMte(tf('起点已定（{0}）：点击终点锚点完成连线', hit.id));
             this.drawOverlay();
           } else if (lp.from.id === hit.id && lp.from.a === hit.a) {
             /* 同一锚点：忽略 */
@@ -5545,7 +5706,7 @@ function gridSnapResize(box, dir) {                  // 缩放吸附：只吸移
             ev.stopPropagation();
             selectOnly([]);
             this.edgeEndPending = endHit;
-            toastMte('点击目标节点的新锚点，替换连线' + (endHit.end === 'a' ? '起点' : '终点') + '（Esc 取消）');
+            toastMte(t(endHit.end === 'a' ? '点击目标节点的新锚点，替换连线起点（Esc 取消）' : '点击目标节点的新锚点，替换连线终点（Esc 取消）'));
             this.drawOverlay();
             return;
           }
@@ -6127,7 +6288,7 @@ function gridSnapResize(box, dir) {                  // 缩放吸附：只吸移
         if (e.key === 'Escape') {
           if (canvas.linkPending) { canvas.cancelLink(); toastMte('已取消连线'); return; }
           if (canvas.edgeEndPending) { canvas.edgeEndPending = null; canvas.drawOverlay(); toastMte('已取消端点修改'); return; }
-          if (multiSelMode) { setMultiSel(false); toastMte('已退出多选模式'); return; }
+          if (multiSelMode) { setMultiSel(false); selectOnly([]); toastMte('已退出多选模式'); return; }   // 退出即取消当前已选组件
           textEd.cancel(); selectEdge(null); selectOnly([]); return;
         }
         const tag = (e.target && e.target.tagName) || '';
@@ -6150,7 +6311,7 @@ function gridSnapResize(box, dir) {                  // 缩放吸附：只吸移
         else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {   // Ctrl+A 全选组件（配合多选/批量修改）
           e.preventDefault();
           const d = D();
-          if (d && d.nodes.length) { selectOnly(d.nodes.map(n => n.id)); toastMte('已全选 ' + d.nodes.length + ' 个组件'); }
+          if (d && d.nodes.length) { selectOnly(d.nodes.map(n => n.id)); toastMte(tf('已全选 {0} 个组件', d.nodes.length)); }
         }
         else if (e.key === 'Enter' && api.selectedIds.size === 1) { e.preventDefault(); textEd.open(api.selectedId); }
       });
@@ -6161,6 +6322,7 @@ function gridSnapResize(box, dir) {                  // 缩放吸附：只吸移
       const tabs = $('paneTabs');
       left.dataset.tab = edit ? 'edit' : 'code';
       tabs.querySelectorAll('.mte-tab').forEach(x => x.classList.toggle('active', (x.dataset.tab === 'edit') === edit));
+      if (lang !== 'zh') applyLang();                  // 英文态进编辑：补翻译延迟渲染的编辑栏
       this.syncSelection();
       api.onHistory();
     },
@@ -6237,11 +6399,11 @@ function gridSnapResize(box, dir) {                  // 缩放吸附：只吸移
         const d = D();
         if (!d || !d.nodes.length) { toastMte('画布上没有组件'); return; }
         selectOnly(d.nodes.map(n => n.id));
-        toastMte('已全选 ' + d.nodes.length + ' 个组件');
+        toastMte(tf('已全选 {0} 个组件', d.nodes.length));
       });
-      mk(r2, 'btnMultiSel', '多选', '多选模式：点按组件加入/移出选择集（可批量修改），Esc 或再点退出').addEventListener('click', () => {
-        setMultiSel(!multiSelMode);
-        toastMte(multiSelMode ? '多选模式：点按组件切换选中，可批量修改' : '已退出多选模式');
+      mk(r2, 'btnMultiSel', '多选', '多选模式：点按组件加入/移出选择集（可批量修改）；退出时清空选择集，Esc 或再点退出').addEventListener('click', () => {
+        if (multiSelMode) { setMultiSel(false); selectOnly([]); toastMte('已退出多选模式'); }   // 退出即取消当前已选组件
+        else { setMultiSel(true); toastMte('多选模式：点按组件切换选中，可批量修改'); }
       });
     },
   });
@@ -6736,7 +6898,7 @@ function gridSnapResize(box, dir) {                  // 缩放吸附：只吸移
   function toastMte(text, kind) {
     const elx = $('mtpToast');
     if (!elx) return;
-    elx.textContent = text;
+    elx.textContent = t(text);
     elx.className = 'show' + (kind ? ' ' + kind : '');
     clearTimeout(toastMte.t);
     toastMte.t = setTimeout(() => { elx.className = ''; }, 2600);
@@ -6809,6 +6971,7 @@ function gridSnapResize(box, dir) {                  // 缩放吸附：只吸移
 })();
 
 console.info('[MermaidToPng] 外观系统 v6：标题=图片突出色 · 其他文字=图片辅助色 · 背景支持水平翻转 · 主按钮=玻璃；若行为异常请 Ctrl+F5 强刷');
+applyLang();   // i18n：按持久化语言（mtp.lang）翻译静态 chrome
 (function init() {
   try {
     const savedAp = JSON.parse(localStorage.getItem('mtp.appearance') || 'null');
