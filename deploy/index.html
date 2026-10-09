@@ -2657,6 +2657,12 @@ globalThis.mermaid = globalThis.__esbuild_esm_mermaid.default;
   /* header 编辑工具按钮组（进出编辑经「编辑」Tab） */
   #mteEditBtns{display:none;gap:6px}
   body.edit-mode #mteEditBtns{display:inline-flex}
+  /* 下载mte 移至「下载 PNG」旁（2026-10-08）：仅编辑模式显示 */
+  #btnSaveMte{display:none}
+  body.edit-mode #btnSaveMte{display:inline-block}
+  /* 「操作」分组（2026-10-08）：按钮等宽紧凑排；多选模式开启态 = 霓虹紫指示 */
+  .ops-row button{flex:1;padding:6px 4px;font-size:12px;min-width:0}
+  #btnMultiSel.on{background:color-mix(in srgb, var(--vivid) 26%, transparent);border-color:var(--vivid)}
   /* 自绘画布 */
   #mteCanvas{display:block;touch-action:none}
   #mteCanvas.linking{cursor:crosshair}
@@ -2711,11 +2717,7 @@ globalThis.mermaid = globalThis.__esbuild_esm_mermaid.default;
   <div class="logo">MermaidToPng</div>
   <div class="spacer"></div>
   <span id="mteEditBtns">
-    <button id="btnUndo" title="撤销 (Ctrl+Z)">↶ 撤销</button>
-    <button id="btnRedo" title="重做 (Ctrl+Y)">↷ 重做</button>
     <button id="btnImportMte" title="导入 .mte 编辑文档（源码+手工布局）">导入</button>
-    <button id="btnSaveMte" title="下载 .mte 编辑文档 (Ctrl+Alt+S)">下载mte</button>
-    <button id="btnDelSel" title="删除选中的组件/连线（移动端没有 Delete 键）">删除</button>
     <input type="file" id="mteFile" accept=".mte,application/json" style="display:none">
   </span>
   <button id="btnAgent" title="Agent 桥：MCP 工具经本地 mtp-mcp 长轮询进本页执行">Agent</button>
@@ -2824,6 +2826,7 @@ globalThis.mermaid = globalThis.__esbuild_esm_mermaid.default;
           <span class="mte-switch"><input type="checkbox" id="pngTransparent"><span class="tk"></span></span>透明底
         </label>
         <button id="btnPNG" class="primary" title="导出 PNG（浏览器将弹出保存位置对话框）">⬇ 下载 PNG</button>
+        <button id="btnSaveMte" title="下载 .mte 编辑文档 (Ctrl+Alt+S，仅编辑模式显示)">下载mte</button>
       </div>
       <div id="stage">
         <div id="viewport"></div>
@@ -4970,7 +4973,7 @@ window.Editor = (function () {
     registerComponent(def) { this.components.push(def); },
     registerGroup(def) {
       this.groups.push(def);
-      this.groups.sort((a, b) => (a.order || 99) - (b.order || 99));
+      this.groups.sort((a, b) => (a.order == null ? 99 : a.order) - (b.order == null ? 99 : b.order));   // order 0 是合法值，不能用 || 判缺省
     },
   };
   function thumbSvg(inner) {
@@ -5024,6 +5027,12 @@ window.Editor = (function () {
   /* ---------- 9.4 Editor.canvas：自绘 SVG 交互层（D2） ---------- */
   let gEdges = null, gGroups = null, gNodes = null, gOverlay = null, cDefs = null, gGrid = null;
   let drag = null;                                    // 拖拽会话：move / multi-move / resize / marquee
+  let multiSelMode = false;                           // 多选模式（2026-10-08）：点按组件切换选中，Esc/再点退出
+  function setMultiSel(on) {
+    multiSelMode = on;
+    const b = $('btnMultiSel');
+    if (b) b.classList.toggle('on', on);
+  }
   const liveBoxes = new Map();                        // 拖拽中的临时几何（id → {x,y,w,h}），pointerup 清空
   const D = () => api.doc;
   /* ---- 辅助线网格（视图分组控制）：行列虚线、间距可调、localStorage('mte.grid') 持久化 ---- */
@@ -5479,6 +5488,11 @@ function gridSnapResize(box, dir) {                  // 缩放吸附：只吸移
           if (!api.selectedIds.has(id)) { ev.stopPropagation(); return true; }   // 减选后不拖动
           return this.startMoveDrag(ev, id, [...api.selectedIds]);
         }
+        if (multiSelMode) {                               // 多选模式：点按切换选中（移动端无 Ctrl 键），减选后不拖动
+          toggleSelect(id);
+          if (!api.selectedIds.has(id)) { ev.stopPropagation(); return true; }
+          return this.startMoveDrag(ev, id, [...api.selectedIds]);
+        }
         if (api.selectedIds.size > 1 && api.selectedIds.has(id))   // 多选集内拖动 = 整组移动
           return this.startMoveDrag(ev, id, [...api.selectedIds]);
         selectOnly([id]);
@@ -5568,8 +5582,10 @@ function gridSnapResize(box, dir) {                  // 缩放吸附：只吸移
             this.drawOverlay();
             return;
           }
-          selectOnly([]);                                 // 空白：取消选中（含边）
-          selectEdge(null);
+          if (!multiSelMode) {                            // 多选模式下点空白不清空选择集（框选仍可用）
+            selectOnly([]);                               // 空白：取消选中（含边）
+            selectEdge(null);
+          }
         }
       });
       svg.addEventListener('dblclick', (ev) => {
@@ -6111,6 +6127,7 @@ function gridSnapResize(box, dir) {                  // 缩放吸附：只吸移
         if (e.key === 'Escape') {
           if (canvas.linkPending) { canvas.cancelLink(); toastMte('已取消连线'); return; }
           if (canvas.edgeEndPending) { canvas.edgeEndPending = null; canvas.drawOverlay(); toastMte('已取消端点修改'); return; }
+          if (multiSelMode) { setMultiSel(false); toastMte('已退出多选模式'); return; }
           textEd.cancel(); selectEdge(null); selectOnly([]); return;
         }
         const tag = (e.target && e.target.tagName) || '';
@@ -6129,6 +6146,11 @@ function gridSnapResize(box, dir) {                  // 缩放吸附：只吸移
           e.preventDefault();
           commands.exec('edge.delete', { id: api.selectedEdge });
           selectEdge(null);
+        }
+        else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {   // Ctrl+A 全选组件（配合多选/批量修改）
+          e.preventDefault();
+          const d = D();
+          if (d && d.nodes.length) { selectOnly(d.nodes.map(n => n.id)); toastMte('已全选 ' + d.nodes.length + ' 个组件'); }
         }
         else if (e.key === 'Enter' && api.selectedIds.size === 1) { e.preventDefault(); textEd.open(api.selectedId); }
       });
@@ -6184,6 +6206,46 @@ function gridSnapResize(box, dir) {                  // 缩放吸附：只吸移
   }
 
   /* 内置六分组（§9.6 表格）：组件 / 字体 / 颜色 / 外观 / 布局 / 视图——声明式注册，UI 自动绑定 Command */
+  /* 「操作」分组（2026-10-08）：撤销/重做/删除/缩放/全选/多选一站式收纳（顶栏只留导入）。
+     撤销/重做/删除的点击绑定仍在 panel.bindHeader（按 ID 查找，渲染先于绑定）。 */
+  registry.registerGroup({
+    id: 'ops', title: '操作', order: 0, needsSel: false, open: true,
+    build(body) {
+      const mk = (parent, id, text, title) => {
+        const b = document.createElement('button');
+        b.id = id; b.textContent = text; b.title = title;
+        parent.appendChild(b);
+        return b;
+      };
+      const r1 = this.row(body);
+      r1.classList.add('ops-row');
+      mk(r1, 'btnUndo', '↶ 撤销', '撤销 (Ctrl+Z)');
+      mk(r1, 'btnRedo', '↷ 重做', '重做 (Ctrl+Y)');
+      mk(r1, 'btnDelSel', '删除', '删除选中的组件/连线（移动端没有 Delete 键）');
+      const r2 = this.row(body);
+      r2.classList.add('ops-row');
+      mk(r2, 'btnZoomOut', '缩小', '画布缩小一档（以视口中心为不动点）').addEventListener('click', () => {
+        const r = stage.getBoundingClientRect();
+        zoomAt(r.left + r.width / 2, r.top + r.height / 2, 1 / 1.25);
+      });
+      mk(r2, 'btnZoomIn', '放大', '画布放大一档（以视口中心为不动点）').addEventListener('click', () => {
+        const r = stage.getBoundingClientRect();
+        zoomAt(r.left + r.width / 2, r.top + r.height / 2, 1.25);
+      });
+      mk(r2, 'btnZoomFit', '适应', '画布适应窗口').addEventListener('click', () => fitView());
+      mk(r2, 'btnSelAll', '全选', '选中全部组件（Ctrl+A，可批量修改）').addEventListener('click', () => {
+        const d = D();
+        if (!d || !d.nodes.length) { toastMte('画布上没有组件'); return; }
+        selectOnly(d.nodes.map(n => n.id));
+        toastMte('已全选 ' + d.nodes.length + ' 个组件');
+      });
+      mk(r2, 'btnMultiSel', '多选', '多选模式：点按组件加入/移出选择集（可批量修改），Esc 或再点退出').addEventListener('click', () => {
+        setMultiSel(!multiSelMode);
+        toastMte(multiSelMode ? '多选模式：点按组件切换选中，可批量修改' : '已退出多选模式');
+      });
+    },
+  });
+
   registry.registerGroup({
     id: 'components', title: '组件', order: 1, needsSel: false, open: true,
     build(body) {
