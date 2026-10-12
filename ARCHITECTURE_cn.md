@@ -1,7 +1,7 @@
 # MermaidToPng 项目架构
 
 > 单文件本地 Mermaid / SVG / HTML → PNG 工具。粘贴代码 → 实时预览 → 导出高清 PNG。
-> 入口：`MermaidToPng.html` 双击即用；线上版 **http://www.jjmermaid.xin**。
+> 入口：`MermaidToPng.html` 双击即用；线上版 https://www.jjmermaid.xin
 > 状态：渲染导出、Agent 接口层 v2（桥模式）、编辑层 v3（所见即所得）均已实现并实测通过。
 
 ## 1. 技术栈与总原则
@@ -26,9 +26,9 @@
 | 粘贴代码到 Code 页，预览页渲染 | 左右分栏布局；`textarea#code` 输入 400ms 防抖后 `renderDiagram()`；Ctrl+Enter 立即渲染 |
 | 三语法支持（Mermaid / SVG / HTML） | `renderDiagram` 按 `state.mode` 分派到 `renderMermaid / renderSVG / renderHTML`；模式来自 `#modeSel`（自动检测/手动）。自动检测 `detectMode()`：剥前导注释/XML 声明/DOCTYPE 后，`<svg` 开头 → svg，其余 `<` 开头 → html，否则 mermaid |
 | SVG 输入渲染与导出 | `DOMParser('image/svg+xml')` 解析（parsererror 检测）→ `mountSVG` 挂载（保留根节点非尺寸样式）；测得自然尺寸后回写根 `width/height` 存入 `lastRawSvg`，走与 Mermaid 相同的导出管线 |
-| HTML 输入渲染 | `renderHTML`：srcdoc iframe 挂载（片段自动包装成最小文档 + inline-block 包裹层）；`pointer-events:none` 让缩放/拖拽事件穿透到 stage |
+| HTML 输入渲染 | `renderHTML`：srcdoc iframe 挂载（片段自动包装成最小文档 + inline-block 包裹层）；`pointer-events:none` 让缩放/拖拽事件穿透到 stage。iframe 默认带 `sandbox="allow-same-origin"`（禁脚本/表单/弹窗/top 导航）；仅当「执行脚本」开关开启才允许执行（此时为 `allow-scripts allow-same-origin`，风险自担） |
 | HTML 尺寸测量 | 片段：包裹元素 `getBoundingClientRect`；完整文档：`body.getBoundingClientRect` 优先（尊重显式宽高），仅当内容真溢出容器（scroll > client）才扩展。工作宽 900px，溢出放宽上限 3840，高度按内容实测 |
-| HTML 导出 | `buildHTMLExportSvg`：克隆 `documentElement` 包进 `<foreignObject>`（width/height=实测尺寸）→ 走同一导出管线；iframe 中 `<script>` 已执行，克隆的是最终 DOM |
+| HTML 导出 | `buildHTMLExportSvg`：克隆 `documentElement` 包进 `<foreignObject>`（width/height=实测尺寸）→ 走同一导出管线；「执行脚本」开启时 iframe 中 `<script>` 已执行（默认关闭：沙箱内不执行脚本），克隆的是最终 DOM |
 | 预览缩放与拖拽 | `#stage`（overflow:hidden 视口）+ `#viewport`（CSS `translate+scale`，origin 左上）；滚轮以鼠标位置为不动点缩放；Pointer Events 拖拽；「适应」「缩放」（点击输入精确比例 5%–800%）调整视图；移动端单指不拖预览，双指捏合/分离=缩小/放大预览图（指心移动=平移） |
 | 下载 PNG | SVG → data:URL → `<img>` → Canvas（倍率缩放）→ `toBlob` → `<a download>` 触发浏览器另存为 |
 | 导出背景色 / 透明底 | 底色选择器（点击弹色板弹层，含「自定义…」编程唤起原生取色器——iOS 无原生取色器也能改底色），Canvas `fillRect` 填色；透明底勾选优先并联动置灰；预览画布实时同步底色（`syncStageBg`），透明底时预览显示棋盘格、导出真透明 |
@@ -60,7 +60,7 @@ graph TD
 | 渲染分派 | `renderDiagram()` | 三个分支成功后都保证 `state.lastRawSvg`（导出源）与 `state.vbW/vbH`（自然尺寸）就位；失败不覆盖旧图 |
 | Mermaid 分支 | `renderMermaid` | `tolerantMermaid` 容错（形状标签补引号、note 语句改写）→ `parse` 预检 → `render` |
 | SVG 分支 | `renderSVG / mountSVG` | **XML 解析 + importNode 优先**，非严格 XML 才回退 innerHTML——HTML 解析器在 SVG 上下文遇 `<br/>` 等 breakout 标签会截断 SVG；尺寸优先级：显式像素宽高 → viewBox → getBBox |
-| HTML 分支 | `renderHTML / buildHTMLExportSvg` | srcdoc iframe 预览（交互穿透）；尺寸自动测量；导出=克隆文档包 foreignObject |
+| HTML 分支 | `renderHTML / buildHTMLExportSvg` | srcdoc iframe 预览（交互穿透；默认 `sandbox="allow-same-origin"`，「执行脚本」开启才执行脚本）；尺寸自动测量；导出=克隆文档包 foreignObject |
 | 视口 | `zoomAt/fitView` | 变换 = `translate(tx,ty) scale(s)`；滚轮不动点公式 `tx' = mx-(mx-tx)k`；新图渲染后自动适应窗口 |
 | 导出 | `exportPNGBlob(mult, transparent, bgColor)` | 1×/2×/3× 倍率；Canvas 上限保护（单边 16384 / 总像素 2^28，超限自动降倍率）；超长内容 data:URL 自动降级 blob:URL；文件名前缀按模式 `mermaid-/svg-/html-` |
 | 编辑器 | 事件层 | 400ms 防抖实时渲染；localStorage 自动保存；Tab 插入两空格 |
@@ -125,7 +125,7 @@ Agent ──stdio MCP──▶ mtp-mcp.mjs ──HTTP长轮询(127.0.0.1)──�
 - MCP 侧（stdio）：`initialize`（instructions 引导未连接先调 `mtp_connect`）、`ping`、`tools/list` = [`mtp_connect`] + 页面工具、`tools/call` → `forward()` 入队等 `/reply`
 - 连接管理：页面 45s 无心跳即断开并换新配对码、清空 pending；桥进程生命周期归 Agent（stdio 父进程），无端口常驻、无僵尸进程
 - CORS/预检：回显 Origin（或 `null`）+ `Access-Control-Allow-Private-Network: true`——file:// 本地页与线上 https 页均可连
-- 丝滑路径：Agent 把 `http://www.jjmermaid.xin/?mtp=<端口>:<配对码>` 发给用户，页面读参自动填面板并连接
+- 丝滑路径：Agent 把 `https://www.jjmermaid.xin/?mtp=<端口>:<配对码>` 发给用户，页面读参自动填面板并连接
 - 常量：POLL_WAIT 25s / PAGE_TIMEOUT 45s / CALL_TIMEOUT 30min / 请求体上限 64MB
 
 ### 4.2 页面侧与页面工具
@@ -140,7 +140,7 @@ Agent ──stdio MCP──▶ mtp-mcp.mjs ──HTTP长轮询(127.0.0.1)──�
 
 | 工具 | 入参 | 返回（小信封，<4KB） |
 |---|---|---|
-| `mtp_render` | `code`(必填) / `output_path`(必填，相对路径=拼第一个 root) / `mode='auto'` / `scale=2`(1–3) / `transparent=false` / `background='#ffffff'` | 成功 `{ok:true, mode, width, height, bytes, path, elapsed_ms, warnings[]}`；失败 `isError` + `{ok:false, stage, message, detail}`（`stage`∈`detect/render/export/file`，`detail` 带 mermaid parser 原始报错） |
+| `mtp_render` | `code`(必填) / `output_path`(必填，相对路径=拼第一个 root) / `mode='auto'` / `scale=2`(1–3) / `transparent=false` / `background='#ffffff'` / `exec_scripts=false`（HTML 模式：执行脚本；仅 HTML 分支消费） | 成功 `{ok:true, mode, width, height, bytes, path, elapsed_ms, warnings[]}`；失败 `isError` + `{ok:false, stage, message, detail}`（`stage`∈`detect/render/export/file`，`detail` 带 mermaid parser 原始报错） |
 | `mtp_detect` | `code` | `{mode}`——纯 `detectMode` 包装，不渲染 |
 
 ### 4.3 `/file`：大二进制落盘
@@ -175,7 +175,7 @@ POST /file   (Authorization: Bearer <token>)
 }
 ```
 
-首次使用：Agent 调 `mtp_connect` → 拿到配对码 → 用户打开 http://www.jjmermaid.xin（或本地 `MermaidToPng.html`），在 Agent 面板填端口+码点连接 → 之后全程自动。页面刷新/重开后 token 失效、桥换新码，Agent 端表现为工具报「页面未连接」，重调 `mtp_connect` 取新码再配对即可。注册/自测/排障详见 `agent/README.md`。
+首次使用：Agent 调 `mtp_connect` → 拿到配对码 → 用户打开 https://www.jjmermaid.xin（或本地 `MermaidToPng.html`），在 Agent 面板填端口+码点连接 → 之后全程自动。页面刷新/重开后 token 失效、桥换新码，Agent 端表现为工具报「页面未连接」，重调 `mtp_connect` 取新码再配对即可。注册/自测/排障详见 `agent/README.md`。
 
 ### 4.5 实现要点
 
@@ -379,7 +379,7 @@ interface MteEdge {
 
 - **保存位置对话框**：Edge/Chrome 需在设置里开启"每次下载前询问保存位置"才弹位置选择；Firefox 默认弹窗。浏览器安全模型，网页无法绕过。
 - **HTML 模式外部资源**：导出管线（data:URL SVG）不加载外部图片/CSS/字体——图片用 base64 data URL 内联，样式写 `<style>`/`style` 属性。预览 iframe 同样受 file:// 限制。
-- **HTML 模式脚本执行**：预览与导出会执行粘贴 HTML 中的 `<script>`（导出截取执行后 DOM），只应粘贴可信内容。
+- **HTML 模式脚本执行**：默认 HTML 预览渲染在 sandbox iframe（`sandbox="allow-same-origin"`）中、`<script>` **不**执行；「执行脚本」开关（默认关闭、不持久化——刷新即复位）把 sandbox 切到 `allow-scripts allow-same-origin`，此后预览/导出才执行脚本（导出截取执行后 DOM）。该开关是加固而非硬隔离——同源内容理论上可自行摘除 sandbox——仍只应粘贴完全可信的内容。Agent 侧由 `mtp_render` 的 `exec_scripts`（默认 `false`）映射同一开关。
 - **HTML 无固有尺寸**：宽度默认工作宽 900px（内容溢出自动放宽至上限 3840px），高度按内容实测；`100vh` 类文档按初始工作高 800px 计算。
 - **序列图等图型**：`sequence` 等内部可能仍用 foreignObject 渲染文本，若个别图型导出空白，属 mermaid 上游行为。
 
@@ -395,12 +395,23 @@ interface MteEdge {
 
 **回归脚本**：编辑层回归脚本位于 `.tmp_verify/run_verify.py`（gitignore，本地按 §5.8-17 的注意事项重建；Chrome headless 注入，Pass A 功能断言 + Pass B 刷新恢复）。
 
+**构建与测试**（仓库根命令；已接入 CI）：
+
+| 命令 | 用途 |
+|---|---|
+| `python scripts/build.py --check` | 四项校验：`MermaidToPng.html` 与 `deploy/index.html` 字节一致；`mermaid.min.js` 与 `deploy/mermaid.min.js` 字节一致；主文件不含发布污染标记（`impeccable-live`、`src="http://localhost:`）；内联 mermaid ESM 标记存在且根目录 `mermaid.min.js` 在且非空 |
+| `python scripts/build.py --sync` | 把主文件与 `mermaid.min.js` 拷入 `deploy/`，随后自动重跑 `--check` |
+| `node tests/test_bridge.mjs` | 桥回归测试（4 组 15 用例）：`/status` 配对码暴露 + 伪造 Host 403、配对/Bearer 鉴权 + `/file` 沙箱、配对限速（错 5 次 → 429）、`/file` 解码上限（>32MB → 413）。`MTP_STRICT=0` 跳过三项安全加固 strict 用例（403/429/413），供改桥过渡期降级 |
+
+CI：`.github/workflows/ci.yml` 在 push / pull_request 触发（windows-latest，Node 20）：`python scripts/build.py --check` → `node tests/test_bridge.mjs`。
+
 **维护事项**：
 
 - 修改主文件后同步部署副本：`cp MermaidToPng.html deploy/index.html`。
-- 线上站点：`http://www.jjmermaid.xin` 部署 `deploy/` 目录内容。
+- 线上站点：`https://www.jjmermaid.xin` 部署 `deploy/` 目录内容。
 - 网页图标：内联于 `<head>` 的 `<link rel="icon" href="data:image/x-icon;base64,…">`；换图标 = 重新 base64 后替换该 href。
 - 升级 mermaid：`python fetch_mermaid.py` 拉新版 `mermaid.min.js`，然后将新库内联进主文件（替换第一个 `<script>…</script>` 内联块，即 mermaid 库所在块）。
+- Mermaid 升级策略：当前固定 **11.4.1**。升级先在隔离分支升到 11.x 最新维护版并跑完回归；之后再评估 12.x（注意其 ES2024 基线与浏览器兼容变化）。每次升级必须通过固定示例集的视觉回归，并记录新版本号与升级原因；库一律经 `fetch_mermaid.py` 拉取替换。
 - Agent 接口层（§4）：桥与页面工具的注册、自测、排障见 `agent/README.md`。
 
 ## 8. 参考资料

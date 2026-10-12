@@ -14,7 +14,7 @@ Page side: `MermaidToPng.html` hosts the Agent panel (port + pairing code + conn
 
 Page entry points (either one connects to the same local bridge):
 
-- Visit http://www.jjmermaid.xin directly (recommended, always the latest version);
+- Visit https://www.jjmermaid.xin directly (recommended, always the latest version);
 - Or double-click local `MermaidToPng.html` (works over file://, zero deployment).
 
 ## Local Files
@@ -49,7 +49,7 @@ Restart the Agent for the change to take effect. `--root` may be given multiple 
 
 ## First Use
 
-1. Open the page: visit http://www.jjmermaid.xin or double-click local `MermaidToPng.html` (keep the page open)
+1. Open the page: visit https://www.jjmermaid.xin or double-click local `MermaidToPng.html` (keep the page open)
 2. The Agent calls `mtp_connect` → returns a 6-digit pairing code + port
 3. In the page's "Agent" panel (top right): enter the port (47870) + pairing code → click "Connect" (连接)
 4. Once paired, `tools/list` includes `mtp_render` / `mtp_detect`; everything after that is automatic
@@ -74,17 +74,26 @@ curl http://127.0.0.1:47870/status
 Once you have the code, either:
 
 1. Tell the user to enter it in the page's Agent panel (flow above); or
-2. **Send the user the parameterized link — clicking it connects instantly**: `http://www.jjmermaid.xin/?mtp=47870:AB12CD` (local files work too: `MermaidToPng.html?mtp=47870:AB12CD`).
+2. **Send the user the parameterized link — clicking it connects instantly**: `https://www.jjmermaid.xin/?mtp=47870:AB12CD` (local files work too: `MermaidToPng.html?mtp=47870:AB12CD`).
+
+## Security Behavior (HTTP Side)
+
+The bridge listens on `127.0.0.1` only; on top of that it enforces three hardening rules. Relevant whenever an endpoint answers `403` / `429` / `413`:
+
+- **Host header check (anti DNS rebinding) → 403**: every request (including OPTIONS) must carry a `Host` of `127.0.0.1` / `localhost` / `[::1]` with the bridge's own port, otherwise `403`. Top-level navigation sends no `Origin` header, which would bypass the browser-source check on `/status` — the Host check closes that hole.
+- **Pairing rate limit → 429**: after 5 consecutive wrong codes, `/pair` locks for 60 seconds; during the lock every attempt (even with the correct code) gets `429`. The 6-digit code space (~10^9) plus this cap keeps online brute force infeasible.
+- **`/file` decode cap → 413**: a single file's decoded size is capped at 32MB; larger uploads are rejected with `413` before anything touches disk (request bodies are capped at 64MB, and base64 of 32MB ≈ 42.7MB still fits, so the cap is always reachable).
 
 ## Agent Tools
 
-### `mtp_render(code, output_path, mode?, scale?, transparent?, background?)`
+### `mtp_render(code, output_path, mode?, scale?, transparent?, background?, exec_scripts?)`
 
 Renders Mermaid / SVG / HTML source into a PNG written to `output_path` (relative paths join the first root).
 
 - `mode`: `auto` (default, uses the page's syntax detection) / `mermaid` / `svg` / `html`
 - `scale`: integer factor 1–3, default 2; automatically steps down beyond the Canvas limit (recorded in `warnings`)
 - `transparent`: transparent background (takes precedence over `background`); `background` defaults to `#ffffff`
+- `exec_scripts`: run `<script>` in HTML mode (default `false` — the HTML preview is a sandboxed iframe without script execution; enable only for fully trusted content, at your own risk)
 - Success: `{ ok:true, mode, width, height, bytes, path, elapsed_ms, warnings[] }`
 - Failure: `isError` + `{ ok:false, stage, message, detail }`, `stage`∈`detect/render/export/file`, `detail` contains the raw parser error
 - PNG bytes go page→bridge via `/file` straight to disk and **never enter the Agent's context** (result <4KB)
@@ -123,5 +132,5 @@ The full acceptance checklist lives in `../ARCHITECTURE.md` §4.6.
 ## Maintenance
 
 - After changing `MermaidToPng.html`, sync `deploy/index.html` (byte-for-byte copy).
-- The live site `http://www.jjmermaid.xin` serves the `deploy/` directory; the web page connects to the user's local bridge (CORS + Private Network preflight already handled).
+- The live site `https://www.jjmermaid.xin` serves the `deploy/` directory; the web page connects to the user's local bridge (CORS + Private Network preflight already handled).
 - The `__mtpAgent` core, like `window.__mtp`, only ever gains methods — signatures never change.

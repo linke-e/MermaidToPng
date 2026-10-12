@@ -1,7 +1,7 @@
 # MermaidToPng Architecture
 
 > A single-file local Mermaid / SVG / HTML → PNG tool. Paste code → live preview → export high-resolution PNG.
-> Entry: double-click `MermaidToPng.html`; online version **http://www.jjmermaid.xin**.
+> Entry: double-click `MermaidToPng.html`; online version **https://www.jjmermaid.xin**.
 > Status: rendering/export, the Agent interface v2 (bridge mode) and the editor layer v3 (WYSIWYG) are all implemented and verified.
 
 ## 1. Tech Stack & Governing Principles
@@ -26,9 +26,9 @@ Three governing principles:
 | Paste code into the Code pane, render in the preview | Left/right split layout; `textarea#code` input debounced 400ms then `renderDiagram()`; Ctrl+Enter renders immediately |
 | Three syntaxes (Mermaid / SVG / HTML) | `renderDiagram` dispatches on `state.mode` to `renderMermaid / renderSVG / renderHTML`; the mode comes from `#modeSel` (auto-detect/manual). Auto-detect `detectMode()`: after stripping leading comments/XML declaration/DOCTYPE, a leading `<svg` → svg, any other leading `<` → html, otherwise mermaid |
 | SVG input rendering & export | `DOMParser('image/svg+xml')` parse (parsererror detection) → `mountSVG` (keeps non-size root styles); measured natural size is written back to root `width/height` into `lastRawSvg`, then the same export pipeline as Mermaid |
-| HTML input rendering | `renderHTML`: srcdoc iframe mount (fragments auto-wrapped into a minimal document + an inline-block wrapper); `pointer-events:none` lets zoom/pan events pass through to the stage |
+| HTML input rendering | `renderHTML`: srcdoc iframe mount (fragments auto-wrapped into a minimal document + an inline-block wrapper); `pointer-events:none` lets zoom/pan events pass through to the stage. The iframe carries `sandbox="allow-same-origin"` by default (scripts/forms/popups/top-navigation disabled); scripts run only when the "Execute scripts" switch is on (then `allow-scripts allow-same-origin`, at the user's own risk) |
 | HTML size measurement | Fragment: wrapper element `getBoundingClientRect`; full document: `body.getBoundingClientRect` first (respects explicit width/height), expanding only when content truly overflows the container (scroll > client). Working width 900px, overflow widens up to 3840, height always measured from content |
-| HTML export | `buildHTMLExportSvg`: clone `documentElement` wrapped in a `<foreignObject>` (width/height = measured size) → same export pipeline; `<script>` in the iframe has already executed, so the clone is the final DOM |
+| HTML export | `buildHTMLExportSvg`: clone `documentElement` wrapped in a `<foreignObject>` (width/height = measured size) → same export pipeline; `<script>` in the iframe has already executed when "Execute scripts" is on (default off: the sandboxed iframe runs without scripts), so the clone is the final DOM |
 | Preview zoom & pan | `#stage` (overflow:hidden viewport) + `#viewport` (CSS `translate+scale`, origin top-left); wheel zooms with the mouse position as the fixed point; Pointer Events drag; "Fit" and "Zoom" (click to type an exact ratio, 5%–800%) buttons adjust the view; on touch, one finger never pans the preview and a two-finger pinch zooms it (finger-midpoint movement pans) |
 | PNG download | SVG → data:URL → `<img>` → Canvas (scaled) → `toBlob` → `<a download>` triggers the browser's save-as |
 | Export background / transparency | background picker (click opens a swatch dialog with a "Custom…" entry that programmatically raises the native color picker — works on iOS where the native picker is unavailable), Canvas `fillRect` fill; transparent takes precedence and grays out the color control; the preview canvas syncs the chosen color live (`syncStageBg`); transparent shows a checkerboard in preview and exports true transparency |
@@ -60,7 +60,7 @@ graph TD
 | Render dispatch | `renderDiagram()` | On success all three branches guarantee `state.lastRawSvg` (export source) and `state.vbW/vbH` (natural size); failures never overwrite the previous diagram |
 | Mermaid branch | `renderMermaid` | `tolerantMermaid` repair pass (quotes shape labels, rewrites note statements) → `parse` precheck → `render` |
 | SVG branch | `renderSVG / mountSVG` | **XML parsing + importNode first**, falling back to innerHTML only for non-strict XML — the HTML parser truncates SVG at breakout tags like `<br/>` in SVG context; size priority: explicit pixel width/height → viewBox → getBBox |
-| HTML branch | `renderHTML / buildHTMLExportSvg` | srcdoc iframe preview (interaction passes through); automatic size measurement; export = cloned document in a foreignObject |
+| HTML branch | `renderHTML / buildHTMLExportSvg` | srcdoc iframe preview (interaction passes through; `sandbox="allow-same-origin"` by default, scripts only with "Execute scripts" on); automatic size measurement; export = cloned document in a foreignObject |
 | Viewport | `zoomAt/fitView` | Transform = `translate(tx,ty) scale(s)`; wheel fixed-point formula `tx' = mx-(mx-tx)k`; new diagrams auto-fit the window |
 | Export | `exportPNGBlob(mult, transparent, bgColor)` | 1×/2×/3× factors; Canvas limit guard (16384 per side / 2^28 total pixels, auto step-down); oversized content falls back from data:URL to blob:URL; filename prefix per mode `mermaid-/svg-/html-` |
 | Editor | event layer | 400ms debounced live render; localStorage autosave; Tab inserts two spaces |
@@ -126,7 +126,7 @@ Zero-dependency single file, Node 18+, no npm packages. Launch parameters: `--po
 - MCP side (stdio): `initialize` (instructions steer unconnected Agents to call `mtp_connect` first), `ping`, `tools/list` = [`mtp_connect`] + page tools, `tools/call` → `forward()` enqueue and await `/reply`
 - Connection management: 45s without a page heartbeat disconnects, rotates the pairing code and clears pending; the bridge's lifecycle belongs to the Agent (stdio parent) — no resident ports, no zombie processes
 - CORS/preflight: echo Origin (or `null`) + `Access-Control-Allow-Private-Network: true` — both file:// local pages and the https online page can connect
-- Smooth path: the Agent sends the user `http://www.jjmermaid.xin/?mtp=<port>:<code>`; the page reads the params, fills the panel and connects automatically
+- Smooth path: the Agent sends the user `https://www.jjmermaid.xin/?mtp=<port>:<code>`; the page reads the params, fills the panel and connects automatically
 - Constants: POLL_WAIT 25s / PAGE_TIMEOUT 45s / CALL_TIMEOUT 30min / request body cap 64MB
 
 ### 4.2 Page Side & Page Tools
@@ -141,7 +141,7 @@ Page tools registered dynamically via `/hello`:
 
 | Tool | Params | Return (small envelope, <4KB) |
 |---|---|---|
-| `mtp_render` | `code`(required) / `output_path`(required, relative = joined to first root) / `mode='auto'` / `scale=2`(1–3) / `transparent=false` / `background='#ffffff'` | Success `{ok:true, mode, width, height, bytes, path, elapsed_ms, warnings[]}`; failure `isError` + `{ok:false, stage, message, detail}` (`stage`∈`detect/render/export/file`, `detail` carries the raw mermaid parser error) |
+| `mtp_render` | `code`(required) / `output_path`(required, relative = joined to first root) / `mode='auto'` / `scale=2`(1–3) / `transparent=false` / `background='#ffffff'` / `exec_scripts=false` (HTML mode: execute scripts; consumed by the HTML branch only) | Success `{ok:true, mode, width, height, bytes, path, elapsed_ms, warnings[]}`; failure `isError` + `{ok:false, stage, message, detail}` (`stage`∈`detect/render/export/file`, `detail` carries the raw mermaid parser error) |
 | `mtp_detect` | `code` | `{mode}` — a pure `detectMode` wrapper, no rendering |
 
 ### 4.3 `/file`: Dropping Large Binaries
@@ -176,7 +176,7 @@ Add to the Agent's `mcp_servers` configuration:
 }
 ```
 
-First use: the Agent calls `mtp_connect` → gets the pairing code → the user opens http://www.jjmermaid.xin (or local `MermaidToPng.html`), enters port + code in the Agent panel and connects → everything after that is automatic. After a page refresh/reopen the token is invalidated and the bridge rotates the code; Agent-side tools report "page not connected" — call `mtp_connect` again for the new code and re-pair. Registration/self-test/troubleshooting: `agent/README.md`.
+First use: the Agent calls `mtp_connect` → gets the pairing code → the user opens https://www.jjmermaid.xin (or local `MermaidToPng.html`), enters port + code in the Agent panel and connects → everything after that is automatic. After a page refresh/reopen the token is invalidated and the bridge rotates the code; Agent-side tools report "page not connected" — call `mtp_connect` again for the new code and re-pair. Registration/self-test/troubleshooting: `agent/README.md`.
 
 ### 4.5 Implementation Notes
 
@@ -384,7 +384,7 @@ Implementation notes: pinch uses capture-phase listeners (unaffected by the canv
 
 - **Save-location dialog**: Edge/Chrome require "ask where to save each file" in browser settings for the location prompt; Firefox prompts by default. Browser security model — a web page cannot bypass it.
 - **HTML mode external resources**: the export pipeline (data:URL SVG) loads no external images/CSS/fonts — inline images as base64 data URLs and keep CSS in `<style>`/`style` attributes. The preview iframe is equally restricted under file://.
-- **HTML mode script execution**: preview and export execute `<script>` in the pasted HTML (export captures the post-execution DOM) — paste trusted content only.
+- **HTML mode script execution**: by default the HTML preview renders in a sandboxed iframe (`sandbox="allow-same-origin"`) and `<script>` does **not** execute; the "Execute scripts" switch (off by default, never persisted — a refresh resets it) switches the sandbox to `allow-scripts allow-same-origin`, and only then preview/export run the scripts (export captures the post-execution DOM). The switch is hardening, not a hard isolation — same-origin content could in theory strip its own sandbox — so paste fully trusted content only. Agent-side, `mtp_render`'s `exec_scripts` (default `false`) maps to the same switch.
 - **HTML without intrinsic size**: width defaults to the 900px working width (overflow widens up to 3840px), height measured from content; `100vh`-style documents compute against the initial 800px working height.
 - **Sequence and similar diagram types**: `sequence` etc. may still render text via foreignObject internally; if individual diagram types export blank, that is upstream mermaid behavior.
 
@@ -400,12 +400,23 @@ Implementation notes: pinch uses capture-phase listeners (unaffected by the canv
 
 **Regression script**: the editor-layer regression script lives at `.tmp_verify/run_verify.py` (gitignored, rebuilt locally following the cautions in §5.8-17; Chrome headless injection, Pass A functional assertions + Pass B refresh restore).
 
+**Build & test** (repo-root commands; also wired into CI):
+
+| Command | Purpose |
+|---|---|
+| `python scripts/build.py --check` | Four checks: `MermaidToPng.html` == `deploy/index.html` byte-identical; `mermaid.min.js` == `deploy/mermaid.min.js`; the main file carries no release-pollution marks (`impeccable-live`, `src="http://localhost:`); the inlined mermaid ESM marker exists and the root `mermaid.min.js` is present and non-empty |
+| `python scripts/build.py --sync` | Copies the main file and `mermaid.min.js` into `deploy/`, then re-runs `--check` |
+| `node tests/test_bridge.mjs` | Bridge regression tests (4 groups, 15 cases): `/status` code exposure + forged-Host 403, pairing/Bearer auth + `/file` sandbox, pairing rate limit (5 fails → 429), `/file` decode cap (>32MB → 413). `MTP_STRICT=0` skips the three security-hardening strict cases (403/429/413) as a transitional downgrade while reworking the bridge |
+
+CI: `.github/workflows/ci.yml` runs on push / pull_request (windows-latest, Node 20): `python scripts/build.py --check` → `node tests/test_bridge.mjs`.
+
 **Maintenance items**:
 
 - After modifying the main file, sync the deployment copy: `cp MermaidToPng.html deploy/index.html`.
-- Live site: `http://www.jjmermaid.xin` serves the `deploy/` directory contents.
+- Live site: `https://www.jjmermaid.xin` serves the `deploy/` directory contents.
 - Page icon: inlined in `<head>` as `<link rel="icon" href="data:image/x-icon;base64,…">`; to change it, re-base64 and replace that href.
 - Upgrading mermaid: `python fetch_mermaid.py` pulls a new `mermaid.min.js`, then re-inline the library into the main file (replace the first `<script>…</script>` inline block, the one holding the mermaid library).
+- Mermaid upgrade policy: the pinned version is **11.4.1**. To upgrade, first do it on an isolated branch targeting the latest maintained 11.x release and run the regression suite there; only then evaluate 12.x (mind its ES2024 baseline and browser-compatibility changes). Every upgrade must pass visual regression over the fixed example set, and the new version plus the reason must be recorded; the library is always pulled and replaced via `fetch_mermaid.py`.
 - Agent interface (§4): bridge and page-tool registration, self-test and troubleshooting in `agent/README.md`.
 
 ## 8. References

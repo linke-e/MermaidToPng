@@ -20,6 +20,9 @@ const PROTOCOL_VERSION = '2025-06-18';
 const POLL_WAIT_MS = 25_000;
 const PAGE_TIMEOUT_MS = 45_000;
 const CALL_TIMEOUT_MS = 30 * 60_000;
+// /file 的解码上限：请求体已有 64MB 上限，而 base64(32MB) ≈ 42.7MB 仍装得进 64MB，因此
+// MAX_DECODED 必先于 readBody 的请求体上限触发（不会出现「请求体先被拒、413 永不可达」）。
+const MAX_DECODED = 32 * 1024 * 1024;
 
 const argValues = (name) => {
     const values = [];
@@ -115,6 +118,29 @@ const flushQueue = () => {
 // ---------------------------------------------------------------------------------------------
 // HTTP（页面一侧）
 
+// Host 头校验（防 DNS rebinding）：恶意域名可把 DNS rebind 到 127.0.0.1 后以顶级导航访问本服务
+//（顶级导航不带 Origin 头，恰好绕过 /status 的 Sec-Fetch-Site 浏览器判定）骗取 /status 配对码；
+// 而浏览器无论导航还是 fetch 都必带 Host 头。这里用 new URL 解析 hostname/port（非法 host 走
+// catch 一律拒绝），要求回环主机名（127.0.0.1 / localhost / [::1]）且端口等于 PORT。
+const hostAllowed = (host) => {
+    try {
+        const { hostname, port } = new URL(`http://${host ?? ''}`);
+        return port === String(PORT) && ['127.0.0.1', 'localhost', '[::1]'].includes(hostname);
+    } catch {
+        return false;
+    }
+};
+
+// /pair 配对码限速：6 位配对码空间约 10^9（32 字符表取 6），不限速则在线暴力遍历可行；
+// 连续错 5 次锁 60 秒，锁定期间不看码直接 429，把尝试速率压到暴力不可行。
+const PAIR_MAX_FAILS = 5;
+const PAIR_LOCK_MS = 60_000;
+const pairGuard = { fails: 0, lockUntil: 0 };
+
+// CORS 授权模型：反射 Origin 是本地页面（file:// 与 https 站点）跨源 fetch 桥服务的功能必需，
+// 但安全不依赖 CORS——所有敏感端点都要求 Bearer 令牌，配对码一次性且 /pair 有限速，/status
+// 对浏览器来源不给码；因此反射 Origin 的暴露面仅限探测与配对暴力尝试，二者分别被 /status 的
+// Sec-Fetch-Site 判定与限速覆盖。
 const corsHeaders = (req) => {
     const origin = req.headers.origin;
     return {
@@ -170,6 +196,11 @@ const inRoots = (abs) => ROOTS.some((root) => {
 
 const server = createServer(async (req, res) => {
     currentReq = req;
+    // 所有分支（含 OPTIONS）之前统一校验 Host（防 DNS rebinding，见 hostAllowed 注释）。
+    if (!hostAllowed(req.headers.host)) {
+        sendJson(res, 403, { error: 'Host 头不合法' });
+        return;
+    }
     const url = new URL(req.url ?? '/', 'http://127.0.0.1');
     if (req.method === 'OPTIONS') {
         res.writeHead(204, corsHeaders(req));
@@ -190,11 +221,23 @@ const server = createServer(async (req, res) => {
             return;
         }
         if (req.method === 'POST' && url.pathname === '/pair') {
+            // 锁定期间不看码直接 429；错码计入 pairGuard，攒满 PAIR_MAX_FAILS 次锁 PAIR_LOCK_MS。
+            if (Date.now() < pairGuard.lockUntil) {
+                sendJson(res, 429, { error: '尝试过于频繁，请稍后再试' });
+                return;
+            }
             const body = await readBody(req);
             if (String(body.code ?? '').trim().toUpperCase() !== state.code) {
+                pairGuard.fails += 1;
+                if (pairGuard.fails >= PAIR_MAX_FAILS) {
+                    pairGuard.lockUntil = Date.now() + PAIR_LOCK_MS;
+                    pairGuard.fails = 0;
+                }
                 sendJson(res, 403, { error: '配对码不对' });
                 return;
             }
+            pairGuard.fails = 0;
+            pairGuard.lockUntil = 0;
             if (state.token) disconnect('被新的页面替换');
             state.token = randomBytes(24).toString('hex');
             state.origin = req.headers.origin ?? null;
@@ -271,8 +314,15 @@ const server = createServer(async (req, res) => {
                 sendJson(res, 403, { error: 'path outside root', roots: ROOTS });
                 return;
             }
+            // base64 只解码一次（原先写文件一次、算字节数又一次）：同一 buf 既落盘也统计 bytes；
+            // 超过 MAX_DECODED 时先返回 413，不再碰磁盘。
+            const buf = Buffer.from(String(body.base64 ?? ''), 'base64');
+            if (buf.length > MAX_DECODED) {
+                sendJson(res, 413, { error: '文件内容超过 32MB 上限' });
+                return;
+            }
             const info = await mkdir(dirname(abs), { recursive: true })
-                .then(() => writeFile(abs, Buffer.from(String(body.base64 ?? ''), 'base64'), { flag: body.overwrite ? 'w' : 'wx' }))
+                .then(() => writeFile(abs, buf, { flag: body.overwrite ? 'w' : 'wx' }))
                 .then(() => null)
                 .catch((error) => error);
             if (info) {
@@ -280,7 +330,7 @@ const server = createServer(async (req, res) => {
                 sendJson(res, exists ? 409 : 500, { error: exists ? 'file exists（overwrite 未开）' : info.message });
                 return;
             }
-            const bytes = Buffer.from(String(body.base64 ?? ''), 'base64').length;
+            const bytes = buf.length;
             log(`落盘 ${abs}（${bytes} B）`);
             sendJson(res, 200, { ok: true, path: abs, bytes });
             return;

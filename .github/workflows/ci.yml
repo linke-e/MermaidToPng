@@ -1,0 +1,28 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    name: build check & bridge tests (windows)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # ① 构建校验：deploy 一致性 / 发布污染 / 依赖标记（失败即 CI 红）
+      - name: Build check
+        run: python scripts/build.py --check
+
+      # ② 桥接测试：默认 MTP_STRICT=1 全量（含 Host 校验 403 / 配对限速 429 /
+      #    /file 解码上限 413 三项安全加固用例）。桥 agent/mtp-mcp.mjs 改动的
+      #    过渡期如需临时降级，可在此步骤加 env MTP_STRICT: '0' 跳过 strict 用例。
+      - name: Bridge tests
+        run: node tests/test_bridge.mjs

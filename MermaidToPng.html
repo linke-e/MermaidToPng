@@ -2660,6 +2660,9 @@ globalThis.mermaid = globalThis.__esbuild_esm_mermaid.default;
   /* 下载mte 移至「下载 PNG」旁（2026-10-08）：仅编辑模式显示 */
   #btnSaveMte{display:none}
   body.edit-mode #btnSaveMte{display:inline-block}
+  /* 「执行脚本」开关（2026-10-12 安全改造）：仅 HTML 模式显示（body.html-mode 由 renderDiagram 维护） */
+  #execScriptsWrap{display:none}
+  body.html-mode #execScriptsWrap{display:flex}
   /* 「操作」分组（2026-10-08）：按钮等宽紧凑排；多选模式开启态 = 霓虹紫指示 */
   .ops-row button{flex:1;padding:6px 4px;font-size:12px;min-width:0}
   #btnMultiSel.on{background:color-mix(in srgb, var(--vivid) 26%, transparent);border-color:var(--vivid)}
@@ -2826,6 +2829,9 @@ globalThis.mermaid = globalThis.__esbuild_esm_mermaid.default;
         <label class="chk" title="PNG 使用透明背景（忽略底色）">
           <span class="mte-switch"><input type="checkbox" id="pngTransparent"><span class="tk"></span></span>透明底
         </label>
+        <label class="chk" id="execScriptsWrap" title="HTML 模式：执行输入内容中的脚本（默认关闭；仅用于完全可信的内容）">
+          <span class="mte-switch"><input type="checkbox" id="execScriptsChk"><span class="tk"></span></span>执行脚本
+        </label>
         <button id="btnPNG" class="primary" title="导出 PNG（浏览器将弹出保存位置对话框）">⬇ 下载 PNG</button>
         <button id="btnSaveMte" title="下载 .mte 编辑文档 (Ctrl+Alt+S，仅编辑模式显示)">下载mte</button>
       </div>
@@ -2960,6 +2966,11 @@ const I18N = {
   '画布上没有组件': 'No components on the canvas',
   '当前没有编辑文档': 'No editing document',
   '新节点': 'New node',
+  /* 安全改造（2026-10-12）：HTML 模式「执行脚本」开关与导出降倍率提示 */
+  '执行脚本': 'Run scripts',
+  'HTML 模式：执行输入内容中的脚本（默认关闭；仅用于完全可信的内容）': 'HTML mode: run scripts in the input (off by default; only for fully trusted content)',
+  '风险提示：将执行输入内容中的脚本，仅用于完全可信的内容': 'Risk notice: scripts in the input will execute — only use with fully trusted content',
+  'Canvas 上限：倍率已自动降为 {0}×': 'Canvas limit: export scale auto-reduced to {0}×',
 };
 let lang = 'zh';
 try { const l = localStorage.getItem('mtp.lang'); if (l === 'en' || l === 'zh') lang = l; } catch (_) {}
@@ -2968,6 +2979,17 @@ function tf(tpl, ...args) {
   let out = t(tpl);
   args.forEach((v, i) => { out = out.split('{' + i + '}').join(v); });
   return out;
+}
+/* 全局 toast（2026-10-12 安全改造新增）：复用 #mtpToast 单元素，供非 Agent 场景提示
+   （HTML「执行脚本」风险提示、手动导出降倍率提示）。Agent 桥与编辑层各有一份闭包内私有
+   实现（toast/toastMte），样式与行为一致。 */
+function showMtpToast(text, kind, ms = 3200) {
+  const el = $('mtpToast');
+  if (!el) return;
+  el.textContent = typeof text === 'string' ? t(text) : String(text);
+  el.className = 'show' + (kind ? ' ' + kind : '');
+  clearTimeout(showMtpToast._t);
+  showMtpToast._t = setTimeout(() => { el.className = ''; }, ms);
 }
 /* 静态 chrome 翻译：只扫白名单根；原文存桩，来回切换无损。
    en 方向按词典命中翻译并记账；zh 方向只还原记账过的节点（英文态文本不命中中文词典） */
@@ -3211,13 +3233,19 @@ function tolerantMermaid(src) {
 /* ================= 渲染 =================
    统一入口：按语法模式分派。三个分支成功后都保证
    state.lastRawSvg（导出数据源）与 state.vbW/vbH（自然尺寸）就位。 */
-async function renderDiagram(raw) {
+function isExecScriptsOn() {          // 「执行脚本」开关选中状态（2026-10-12 安全改造；元素缺失按未勾选）
+  const c = $('execScriptsChk');
+  return !!(c && c.checked);
+}
+
+async function renderDiagram(raw, opts) {
   if (window.Editor && Editor.active)           // 编辑画布进行中：外部触发（Agent/快捷键等）不得摧毁交互层
     return { ok: false, error: '编辑模式进行中，请先退出编辑' };
   const src = String(raw ?? codeEl.value ?? '').trim();
   state.error = '';
   if (!src) {
     state.lastRawSvg = null; state.mode = '';
+    document.body.classList.toggle('html-mode', false);   // 清空后「执行脚本」开关一并隐藏
     viewport.innerHTML = '';
     hint.style.display = 'flex';
     sizeInfo.textContent = '';
@@ -3225,8 +3253,10 @@ async function renderDiagram(raw) {
   }
   hint.style.display = 'none';      // Code 区有内容即不显示引导提示（渲染失败也一样）
   state.mode = modeOf(src);
+  document.body.classList.toggle('html-mode', state.mode === 'html');   // 「执行脚本」开关仅 HTML 模式显示
   if (state.mode === 'svg')  return renderSVG(src);
-  if (state.mode === 'html') return renderHTML(src);
+  if (state.mode === 'html')
+    return renderHTML(src, opts || { execScripts: isExecScriptsOn() });   // Agent 路径显式 opts 优先；UI 路径读开关
   return renderMermaid(src);
 }
 
@@ -3280,7 +3310,7 @@ function renderSVG(src) {
    需要的图片请用 base64 data URL 内联；<style> 内联样式不受影响。 */
 const HTML_WORK_W = 900, HTML_WORK_H = 800, HTML_MAX_W = 3840;
 
-function renderHTML(src) {
+function renderHTML(src, opts) {
   const isDoc = /<!doctype\s+html[\s>]|<html[\s>]/i.test(src);
   const docHtml = isDoc ? src :
     '<!DOCTYPE html><html><head><meta charset="utf-8">'
@@ -3297,6 +3327,11 @@ function renderHTML(src) {
   ifr.setAttribute('title', 'HTML 预览');
   ifr.style.width = HTML_WORK_W + 'px';
   ifr.style.height = HTML_WORK_H + 'px';
+  /* 默认 sandbox（2026-10-12 安全改造）：禁脚本/表单/弹窗/top 导航，仅保留 allow-same-origin
+     供父页面测量宽高与导出克隆——父页面必须读 ifr.contentDocument，去掉同源父读子 DOM 全挂，
+     硬隔离在本架构下不可行。显式勾选「执行脚本」后属于纵深防御而非硬隔离：同源内容理论上
+     可自行移除 sandbox（MDN 已注明），仅对完全可信的内容开启。 */
+  ifr.setAttribute('sandbox', opts && opts.execScripts ? 'allow-scripts allow-same-origin' : 'allow-same-origin');
   ifr.srcdoc = docHtml;
   viewport.appendChild(ifr);
   applyTransform();
@@ -3570,7 +3605,7 @@ function svgImgSrc(svgText) {
   if (dataUrl.length <= 1500000) return { url: dataUrl, blob: false };
   return { url: URL.createObjectURL(new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' })), blob: true };
 }
-async function exportPNGBlob(mult = 2, transparent = false, bgColor = '#ffffff') {
+async function exportPNGBlob(mult = 2, transparent = false, bgColor = '#ffffff', opts = {}) {
   if (window.Editor && Editor.active) Editor.canvas.syncExport();   // 编辑画布：导出前同步最新交互层状态
   if (!state.lastRawSvg) throw new Error('没有可导出的内容：请先渲染成功的 Mermaid / SVG / HTML 代码');
   // Canvas 上限保护（Chrome）：单边 16384 / 总像素约 2^28，超限自动降倍率而不是导出空白
@@ -3578,6 +3613,11 @@ async function exportPNGBlob(mult = 2, transparent = false, bgColor = '#ffffff')
   const MAXSIDE = 16384, MAXAREA = 1 << 28;
   while (m > 1 && (state.vbW * m > MAXSIDE || state.vbH * m > MAXSIDE
                   || state.vbW * state.vbH * m * m > MAXAREA)) m--;
+  if (m < Math.max(1, Math.round(mult) || 1)) {
+    // Canvas 上限触发降倍率（2026-10-12 改造3）：手动导出路径弹 toast 告知实际倍率；
+    // Agent 路径已有 warnings，调用处传 {silent:true} 免重复提示。
+    if (!(opts && opts.silent)) showMtpToast(tf('Canvas 上限：倍率已自动降为 {0}×', m), '', 3600);
+  }
   const src = svgImgSrc(state.lastRawSvg);
   const img = new Image();
   img.src = src.url;
@@ -3866,6 +3906,12 @@ $('pngTransparent').onchange = e => {
   syncStageBg();
 };
 $('pngBg').onchange = e => { localStorage.setItem('mtp.pngBg', e.target.value); syncStageBg(); };
+/* 「执行脚本」开关（2026-10-12 安全改造）：勾选=HTML iframe 加 allow-scripts（纵深防御，非硬隔离）。
+   安全默认：不持久化，刷新后回到默认关闭；勾选瞬间弹一次风险提示。 */
+$('execScriptsChk').onchange = e => {
+  if (e.target.checked) showMtpToast('风险提示：将执行输入内容中的脚本，仅用于完全可信的内容', '', 3600);
+  renderDiagram();
+};
 /* 底色点击 → 色板弹层（2026-10-08）：iOS 无原生取色器也能改底色；「自定义…」经 _mtpCustom 标记放行原生取色器 */
 $('pngBg').addEventListener('click', e => {
   const inp = $('pngBg');
@@ -3919,7 +3965,7 @@ window.__mtp = {
 };
 
 /* ================= Agent 接口钩子（无头渲染用，ARCHITECTURE §8.2） =================
-   __mtpAgent.render({code, mode, scale, transparent, background})
+   __mtpAgent.render({code, mode, scale, transparent, background, execScripts})
    → { ok:true,  mode, width, height, bytes, pngBase64, warnings:[] }
    → { ok:false, stage, message, detail }
    统一信封：成功/失败都 resolve，不 throw 跨界；失败不覆盖旧图（renderDiagram 原语义）。 */
@@ -3939,7 +3985,7 @@ window.__mtpAgent = {
       stage = 'render';
       $('modeSel').value = (want === 'auto') ? detectMode(code) : want;
       let r;
-      try { r = await renderDiagram(code); }
+      try { r = await renderDiagram(code, { execScripts: q.execScripts === true }); }   // exec_scripts 透传，仅 HTML 分支消费
       finally { $('modeSel').value = prevSel; }
       if (!r || r.ok !== true)
         return { ok: false, stage: 'render',
@@ -3958,7 +4004,7 @@ window.__mtpAgent = {
       const bg = String(q.background || '#ffffff');
       const wantW = Math.max(1, Math.round(state.vbW * scale));
       const wantH = Math.max(1, Math.round(state.vbH * scale));
-      const blob = await exportPNGBlob(scale, transparent, bg);
+      const blob = await exportPNGBlob(scale, transparent, bg, { silent: true });   // Agent 路径已有 warnings，免 toast 重复提示
       stage = 'base64';
       const buf = new Uint8Array(await blob.arrayBuffer());
       const magic = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
@@ -4000,6 +4046,7 @@ window.__mtpAgentBridge = (function () {
           scale: { type: 'integer', minimum: 1, maximum: 3, description: '倍率，默认 2；超 Canvas 上限自动降级并记入 warnings' },
           transparent: { type: 'boolean', description: '透明底，默认 false；true 时优先于 background' },
           background: { type: 'string', description: '导出底色，默认 #ffffff' },
+          exec_scripts: { type: 'boolean', description: 'HTML 模式是否执行输入中的脚本，默认 false；仅对可信内容开启' },
         },
         required: ['code', 'output_path'],
       },
@@ -4093,6 +4140,7 @@ window.__mtpAgentBridge = (function () {
     const t0 = performance.now();
     const out = await window.__mtpAgent.render({
       code: a.code, mode: a.mode, scale: a.scale, transparent: a.transparent, background: a.background,
+      execScripts: a.exec_scripts === true,
     });
     const elapsed = Math.round(performance.now() - t0);
     if (!out.ok) {
@@ -7001,8 +7049,6 @@ applyLang();   // i18n：按持久化语言（mtp.lang）翻译静态 chrome
   Editor.init();          // 编辑层 v3（§9）：面板/按钮/快捷键/编辑栏就绪（不自动进入编辑）
 })();
 </script>
-<!-- impeccable-live-start -->
-<script src="http://localhost:8400/live.js?token=c769ef3c-b689-455b-9793-69d5e6bf75f3"></script>
-<!-- impeccable-live-end -->
+
 </body>
 </html>

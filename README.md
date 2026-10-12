@@ -3,10 +3,11 @@
 # MermaidToPng
 Mermaid / SVG / HTML to PNG converter
 Render Mermaid diagrams, SVG vector graphics, HTML fragments or full web pages into high-resolution PNG images. Single file, no installation, works offline.
-Online version: http://www.jjmermaid.xin
+Online version: https://www.jjmermaid.xin
 
 ## Features
 - **Three syntaxes** — paste Mermaid / SVG / HTML, all renderable and exportable; syntax is auto-detected, or you can pick a mode manually
+- **HTML sandbox by default** — HTML mode renders inside a sandboxed iframe and does **not** execute scripts; scripts run only after the "Execute scripts" (执行脚本) switch is turned on explicitly (at your own risk, trusted content only). The Agent's `mtp_render` exposes the same choice via `exec_scripts` (default `false`)
 - **Appearance settings** — upload an image as the global background with four live-adjustable parameters (fill mode / zoom / blur / mask strength; numeric inputs, no sliders); the header bar and both page top bars enable glass blur automatically; the three main headings take the image's dominant color while remaining text blends against the background via difference; all settings, including the background image, persist locally
 - **Zero dependencies** — just a modern browser (Edge / Chrome / Firefox); nothing to install, no network needed, no runtime dependencies
 - **Portable** — copy it to a USB stick / another computer and it just works; the minimal carry is the single `MermaidToPng.html` file
@@ -17,7 +18,7 @@ Online version: http://www.jjmermaid.xin
 - **Agent interface** — any MCP Agent can go straight from "diagram source → PNG on disk": all tools execute inside the web page, and the local bridge is a pure-forwarding zero-dependency relay (see `agent/README.md`)
 
 ## Quick Start
-Open the page via either entry: the online version at http://www.jjmermaid.xin, or double-click local `MermaidToPng.html` (or `MermaidToPng.bat`). Then:
+Open the page via either entry: the online version at https://www.jjmermaid.xin, or double-click local `MermaidToPng.html` (or `MermaidToPng.bat`). Then:
 1. Paste code into the Code pane on the left (top-left selector: "Auto detect / Mermaid / SVG / HTML", auto-detect by default):
    - Mermaid: `graph TD` / `sequenceDiagram` etc. (syntax reference: https://mermaid.ai/open-source/syntax/flowchart.html )
    - SVG: an `<svg>...</svg>` fragment (an `<?xml ...?>` declaration and leading comments are accepted)
@@ -28,7 +29,7 @@ Open the page via either entry: the online version at http://www.jjmermaid.xin, 
 
 ### HTML Mode Notes
 - HTML without intrinsic sizes lays out at a 900px working width: it widens automatically when the content needs more room (up to 3840px), and height is always measured from the actual content; full documents with explicit width/height use their own dimensions
-- Preview and export execute `<script>` tags in the pasted HTML (export captures the final state after execution) — paste trusted content only
+- By default the preview renders in a sandboxed iframe and `<script>` tags are **not** executed; tick the "Execute scripts" (执行脚本) switch above the input to allow them — for fully trusted content only, at your own risk. With the switch on, export captures the final state after execution
 - The export pipeline loads no external resources: inline images as base64 data URLs and keep CSS in `<style>` / `style` attributes
 
 ## Requirements
@@ -50,7 +51,7 @@ Just a modern browser (Edge / Chrome / Firefox). Nothing to install, no network,
 ## Agent Interface in a Nutshell
 1. On the Agent side, start the bridge and call `mtp_connect` → get the port (default 47870) and a 6-digit pairing code
 2. Open the page (online or local), click the "Agent" button to the left of "Appearance" (外观) in the header → enter the port + pairing code → connect
-3. From then on the Agent calls `mtp_render(code, output_path)` to render Mermaid / SVG / HTML into a PNG written under the sandboxed `--root` directories
+3. From then on the Agent calls `mtp_render(code, output_path)` to render Mermaid / SVG / HTML into a PNG written under the sandboxed `--root` directories (HTML mode runs script-free in the sandbox unless `exec_scripts` is explicitly `true`)
 
 See [README.md](agent/README.md) and [ARCHITECTURE](ARCHITECTURE.md) §4 for details.
 

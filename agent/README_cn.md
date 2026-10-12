@@ -14,7 +14,7 @@ Agent ──stdio MCP──▶ mtp-mcp.mjs ──HTTP长轮询(127.0.0.1:47870)�
 
 页面入口（任选其一，均连同一个本地桥）：
 
-- 直接访问 http://www.jjmermaid.xin（推荐，始终最新版）；
+- 直接访问 https://www.jjmermaid.xin（推荐，始终最新版）；
 - 或双击本地 `MermaidToPng.html`（file:// 可用，零部署）。
 
 ## 本地文件
@@ -48,7 +48,7 @@ agent/
 
 ## 首次使用
 
-1. 打开页面：访问 http://www.jjmermaid.xin 或双击本地 `MermaidToPng.html`（页面须保持开着）
+1. 打开页面：访问 https://www.jjmermaid.xin 或双击本地 `MermaidToPng.html`（页面须保持开着）
 2. Agent 调用 `mtp_connect` → 返回 6 位配对码 + 端口
 3. 页面右上角「Agent」面板：填端口（47870）+ 配对码 → 点「连接」
 4. 配对成功后 `tools/list` 出现 `mtp_render` / `mtp_detect`，此后全程自动
@@ -73,17 +73,26 @@ curl http://127.0.0.1:47870/status
 拿到码后二选一：
 
 1. 告诉用户在页面 Agent 面板填码连接（流程同上）；
-2. **把带参链接发给用户，点开即连**：`http://www.jjmermaid.xin/?mtp=47870:AB12CD`（本地文件亦可：`MermaidToPng.html?mtp=47870:AB12CD`）。
+2. **把带参链接发给用户，点开即连**：`https://www.jjmermaid.xin/?mtp=47870:AB12CD`（本地文件亦可：`MermaidToPng.html?mtp=47870:AB12CD`）。
+
+## 安全行为（HTTP 侧）
+
+桥只监听 `127.0.0.1`；在此之上还有三条加固规则。端点返回 `403` / `429` / `413` 时对照排查：
+
+- **Host 头校验（防 DNS rebinding）→ 403**：所有请求（含 OPTIONS）的 `Host` 必须是 `127.0.0.1` / `localhost` / `[::1]` 且端口等于桥自身端口，否则 `403`。顶级导航不带 `Origin` 头，恰好能绕过 `/status` 的浏览器来源判定——Host 校验正是补上这个口子。
+- **配对限速 → 429**：`/pair` 连续错码 5 次后锁定 60 秒；锁定期间任何尝试（包括正确码）都返回 `429`。6 位配对码空间约 10^9，叠加限速后在线暴力不可行。
+- **`/file` 解码上限 → 413**：单文件解码后大小上限 32MB；超限请求返回 `413`，不碰磁盘（请求体上限 64MB，而 32MB 的 base64 ≈ 42.7MB 仍装得下，故该上限必可达）。
 
 ## Agent 工具
 
-### `mtp_render(code, output_path, mode?, scale?, transparent?, background?)`
+### `mtp_render(code, output_path, mode?, scale?, transparent?, background?, exec_scripts?)`
 
 把 Mermaid / SVG / HTML 源码渲染成 PNG 写入 `output_path`（相对路径 = 拼第一个 root）。
 
 - `mode`：`auto`（默认，走页面语法检测）/ `mermaid` / `svg` / `html`
 - `scale`：1–3 整数倍率，默认 2；超 Canvas 上限自动降倍率（降级记入 `warnings`）
 - `transparent`：透明底（优先于 `background`）；`background` 默认 `#ffffff`
+- `exec_scripts`：HTML 模式是否执行 `<script>`（默认 `false`——HTML 预览在 sandbox iframe 中不执行脚本；仅对完全可信的内容开启，风险自担）
 - 成功：`{ ok:true, mode, width, height, bytes, path, elapsed_ms, warnings[] }`
 - 失败：`isError` + `{ ok:false, stage, message, detail }`，`stage`∈`detect/render/export/file`，`detail` 含原始 parser 报错
 - PNG 字节经页面→桥 `/file` 直落磁盘，**不进 Agent 上下文**（结果 <4KB）
@@ -122,5 +131,5 @@ curl http://127.0.0.1:47870/status
 ## 维护
 
 - `MermaidToPng.html` 改动后同步 `deploy/index.html`（逐字节拷贝）。
-- 线上站点 `http://www.jjmermaid.xin` 部署 `deploy/` 目录内容即可，网页版连用户本地的桥（CORS + Private Network 预检已处理）。
+- 线上站点 `https://www.jjmermaid.xin` 部署 `deploy/` 目录内容即可，网页版连用户本地的桥（CORS + Private Network 预检已处理）。
 - `__mtpAgent` 内核与 `window.__mtp` 一样只增不改签名。
