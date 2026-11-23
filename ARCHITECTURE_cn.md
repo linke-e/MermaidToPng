@@ -6,10 +6,10 @@
 
 ## 1. 技术栈与总原则
 
-- **渲染引擎**：mermaid v11.4.1（UMD，内联进主文件，无网络依赖）+ 浏览器原生 SVG/HTML 渲染
+- **渲染引擎**：双引擎——pele v1.13.0（默认，global 构建内联，同步渲染 Mermaid→SVG）+ mermaid v11.4.1（UMD 内联，兼容兜底），均无网络依赖 + 浏览器原生 SVG/HTML 渲染
 - **UI**：原生 HTML/CSS/JS（零框架、零构建）；深色赛博主题
 - **导出管线**：浏览器原生 Canvas 2D + `toBlob('image/png')`（三语法共用同一条管线）
-- **持久化**：`localStorage`（代码、语法模式、分栏比例、倍率、透明底偏好、外观、编辑快照、辅助线设置）
+- **持久化**：`localStorage`（代码、语法模式、渲染引擎、分栏比例、倍率、透明底偏好、外观、编辑快照、辅助线设置）
 
 三条总原则：
 
@@ -66,11 +66,21 @@ graph TD
 | 编辑器 | 事件层 | 400ms 防抖实时渲染；localStorage 自动保存；Tab 插入两空格 |
 | 测试钩子 | `window.__mtp` | `render / exportBlob / detect / setZoom / zoomTo / fit / state` |
 
+### 2.3 双渲染引擎（2026-11-23）
+
+- **分叉点**：`renderDiagram` 的 mermaid 兜底分支按 `#engineSel` 选择器（`mtp.engine` 持久化，默认 `pele`）分派到 `renderPele` / `renderMermaid`；选择器仅 Mermaid 模式显示（`body.mermaid-mode` 由 renderDiagram 维护，同 html-mode 机制）。
+- **renderPele**：`tolerantMermaid` 容错（与 mermaid 分支同一副本）→ `pele.render(code)`（同步，失败抛 `PeleError{code,line,column,snippet}`）→ `state.lastRawSvg` → `mountSVG(svg,false,true)`。错误格式化（行/列/snippet + 「切换 Mermaid 重试」提示）走 `showError()`（新增 `state.errorTitle` 区分引擎前缀），失败不覆盖旧图。
+- **mountSVG 特判**：pele 的颜色/字体全挂在 SVG 根 `style` 的 `--pele-*` 变量链上（带默认色 fallback、自包含），第三参 `peleSvg=true` 时只剥 `max-width`，**不整删 style**（否则全图失色）；其余调用路径行为不变。
+- **为什么 pele 适合本管线**：输出为纯 SVG 文本（无 foreignObject），经 `<img>`→Canvas 导出不污染画布——mermaid 开 `htmlLabels` 时 foreignObject 会令 `toBlob` 抛 tainted canvas；pele SVG 自带变量 fallback 链，落进 `lastRawSvg` 即可直通现有导出管线。
+- **已知限制**：pele 面向 Mermaid 12.1.0 语法；`%%{init}%%` 指令可解析、不报错，但 `themeVariables`/theme 全局主题被**静默忽略**（classDef/class/linkStyle/subgraph 完整支持，frontmatter 原生支持）。未来可加「init→`--pele-*` 变量」翻译层提升主题保真度。
+- **Agent**：`mtp_render` 经 `renderDiagram` 同一分叉，遵循页面当前引擎选择（见 §4）。
+- **库升级**：`fetch_pele.py` 拉取固定版本（npmmirror CDN tgz 直连 + 代理回退），内联块与根目录 `pele.min.js` 的一致性由 `build.py --check` ⑤ 校验。
+
 ## 3. 文件清单
 
 ```
 MermaidToPng/
-├── MermaidToPng.html    # 全部应用代码 + 内联 mermaid 库（~2.8MB，双击即用）
+├── MermaidToPng.html    # 全部应用代码 + 内联 mermaid / pele 双库（~3.6MB，双击即用）
 │                        #   含 Agent 按钮/配对面板/桥客户端/工具实现（§4）
 │                        #   含编辑层：header 编辑工具组、左栏「源码|编辑」双 Tab + 分组编辑栏、
 │                        #        自绘 SVG 交互层、window.__mtpEdit 钩子、.mte sidecar（§5）
@@ -80,9 +90,12 @@ MermaidToPng/
 │   └── README.md        # Agent 接口层使用说明（注册 / 自测 / 排障）
 ├── deploy/
 │   ├── index.html       # 部署副本（与主文件逐字节同步）
-│   └── mermaid.min.js   # mermaid 库副本（与根目录一致）
+│   ├── mermaid.min.js   # mermaid 库副本（与根目录一致）
+│   └── pele.min.js      # pele 库副本（与根目录一致）
 ├── mermaid.min.js       # mermaid v11.4.1 官方 UMD（2.57MB，升级库用）
+├── pele.min.js          # pele v1.13.0 官方 global 构建（0.73MB，升级库用）
 ├── fetch_mermaid.py     # 升级 mermaid 库（npmmirror 直连 + 代理回退；仅标准库）
+├── fetch_pele.py        # 升级 pele 库（npmmirror CDN tgz 直连 + 代理回退；仅标准库）
 ├── README.md            # 面向使用者的快速上手
 ├── ARCHITECTURE.md      # 本文档
 └── .gitignore
@@ -399,8 +412,8 @@ interface MteEdge {
 
 | 命令 | 用途 |
 |---|---|
-| `python scripts/build.py --check` | 四项校验：`MermaidToPng.html` 与 `deploy/index.html` 字节一致；`mermaid.min.js` 与 `deploy/mermaid.min.js` 字节一致；主文件不含发布污染标记（`impeccable-live`、`src="http://localhost:`）；内联 mermaid ESM 标记存在且根目录 `mermaid.min.js` 在且非空 |
-| `python scripts/build.py --sync` | 把主文件与 `mermaid.min.js` 拷入 `deploy/`，随后自动重跑 `--check` |
+| `python scripts/build.py --check` | 五项校验：`MermaidToPng.html` 与 `deploy/index.html` 字节一致；`mermaid.min.js` 与 `deploy/mermaid.min.js` 字节一致；主文件不含发布污染标记（`impeccable-live`、`src="http://localhost:`）；内联 mermaid ESM 标记存在且根目录 `mermaid.min.js` 在且非空；`pele.min.js` 与 `deploy/pele.min.js` 字节一致且主文件内联 pele 块与根目录文件内容一致 |
+| `python scripts/build.py --sync` | 把主文件与 `mermaid.min.js`、`pele.min.js` 拷入 `deploy/`，随后自动重跑 `--check` |
 | `node tests/test_bridge.mjs` | 桥回归测试（4 组 15 用例）：`/status` 配对码暴露 + 伪造 Host 403、配对/Bearer 鉴权 + `/file` 沙箱、配对限速（错 5 次 → 429）、`/file` 解码上限（>32MB → 413）。`MTP_STRICT=0` 跳过三项安全加固 strict 用例（403/429/413），供改桥过渡期降级 |
 
 CI：`.github/workflows/ci.yml` 在 push / pull_request 触发（windows-latest，Node 20）：`python scripts/build.py --check` → `node tests/test_bridge.mjs`。
@@ -412,6 +425,7 @@ CI：`.github/workflows/ci.yml` 在 push / pull_request 触发（windows-latest�
 - 网页图标：内联于 `<head>` 的 `<link rel="icon" href="data:image/x-icon;base64,…">`；换图标 = 重新 base64 后替换该 href。
 - 升级 mermaid：`python fetch_mermaid.py` 拉新版 `mermaid.min.js`，然后将新库内联进主文件（替换第一个 `<script>…</script>` 内联块，即 mermaid 库所在块）。
 - Mermaid 升级策略：当前固定 **11.4.1**。升级先在隔离分支升到 11.x 最新维护版并跑完回归；之后再评估 12.x（注意其 ES2024 基线与浏览器兼容变化）。每次升级必须通过固定示例集的视觉回归，并记录新版本号与升级原因；库一律经 `fetch_mermaid.py` 拉取替换。
+- 升级 pele：`python fetch_pele.py` 拉新版 `pele.min.js`，将新库内联进主文件（替换「pele x.y.z | MIT License」注释所在 `<script>` 内联块），再 `python scripts/build.py --sync`。版本固定 **1.13.0**；升级须过固定示例（含 test.txt 接线图）的视觉回归，并记录新版本号与原因。
 - Agent 接口层（§4）：桥与页面工具的注册、自测、排障见 `agent/README.md`。
 
 ## 8. 参考资料

@@ -10,11 +10,13 @@
   ② mermaid.min.js 与 deploy/mermaid.min.js 字节一致
   ③ 主文件不含发布污染标记（'impeccable-live'、'src="http://localhost:'）
   ④ 主文件含 '__esbuild_esm_mermaid'，且根目录 mermaid.min.js 存在、非空
+  ⑤ pele.min.js 与 deploy/pele.min.js 字节一致；主文件含内联 pele 构建标记且与根目录文件一致
 
 退出码: 0=通过  1=校验未通过  2=用法错误
 """
 from __future__ import annotations
 
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -22,24 +24,31 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 MAIN_HTML = ROOT / "MermaidToPng.html"
 MAIN_JS = ROOT / "mermaid.min.js"
+MAIN_PELE = ROOT / "pele.min.js"
 DEPLOY_DIR = ROOT / "deploy"
 DEPLOY_HTML = DEPLOY_DIR / "index.html"
 DEPLOY_JS = DEPLOY_DIR / "mermaid.min.js"
+DEPLOY_PELE = DEPLOY_DIR / "pele.min.js"
 
 # ③ 发布污染检测：本地调试/其他项目混入的标记，出现即说明发布面被污染。
 POLLUTION_MARKS = ('impeccable-live', 'src="http://localhost:')
 # ④ 依赖完整性：主文件内联的 mermaid esm 构建标记。
 ESM_MARK = "__esbuild_esm_mermaid"
+# ⑤ 依赖完整性：主文件内联的 pele 全局构建标记（pele.global.js IIFE 赋值）。
+PELE_MARK = "var pele="
+# ⑤ 内联 pele 块提取：注释头 + 库体（库内无 </script>，非贪婪到收尾安全）
+PELE_BLOCK_RE = re.compile(r"/\* pele \d+\.\d+\.\d+ \| MIT License \| [^*]*\*/\r?\n(.*?)\r?\n</script>", re.S)
 
 USAGE = """用法:
   python scripts/build.py --check   构建校验（deploy 一致性 / 发布污染 / 依赖标记）
-  python scripts/build.py --sync    同步主文件与 mermaid.min.js 到 deploy/ 并自动校验
+  python scripts/build.py --sync    同步主文件与 mermaid.min.js、pele.min.js 到 deploy/ 并自动校验
 
 校验项:
   1. MermaidToPng.html 与 deploy/index.html 字节一致
   2. mermaid.min.js 与 deploy/mermaid.min.js 字节一致
   3. 主文件不含发布污染标记（'impeccable-live'、'src="http://localhost:'）
   4. 主文件含 '__esbuild_esm_mermaid'，且根目录 mermaid.min.js 存在、非空
+  5. pele.min.js 与 deploy/pele.min.js 字节一致；主文件含内联 pele 构建标记且与根目录文件一致
 
 退出码: 0=通过  1=校验未通过  2=用法错误
 """
@@ -103,6 +112,39 @@ def run_check() -> bool:
     elif len(js_bytes) == 0:
         problems.append("④ 根目录 mermaid.min.js 为空文件")
 
+    # ⑤ pele.min.js 与 deploy 副本字节一致；主文件内联 pele 标记/内容与根目录文件一致
+    pele_bytes: bytes | None = None
+    if not MAIN_PELE.is_file():
+        problems.append("⑤ 根目录 pele.min.js 缺失")
+    else:
+        pele_bytes = MAIN_PELE.read_bytes()
+        if not DEPLOY_PELE.is_file():
+            problems.append("⑤ deploy/pele.min.js 缺失，无法与根目录文件比对")
+        else:
+            deploy_pele = DEPLOY_PELE.read_bytes()
+            if deploy_pele != pele_bytes:
+                problems.append(
+                    f"⑤ pele.min.js 与 deploy/pele.min.js 字节不一致"
+                    f"（根目录 {len(pele_bytes)} B，deploy/pele.min.js {len(deploy_pele)} B）；"
+                    f"如确以根目录为准请跑 --sync"
+                )
+    if main_text is None:
+        pass  # 缺失已在③报过，不重复计数
+    elif PELE_MARK not in main_text:
+        problems.append(f"⑤ 主文件不含 {PELE_MARK!r}（内联 pele 构建缺失？）")
+    elif pele_bytes is not None:
+        m = PELE_BLOCK_RE.search(main_text)
+        if not m:
+            problems.append("⑤ 主文件未找到内联 pele 块（注释头/收尾结构不符？）")
+        else:
+            inlined = m.group(1).replace("\r\n", "\n").strip()
+            root_lib = pele_bytes.decode("utf-8", errors="replace").replace("\r\n", "\n").strip()
+            if inlined != root_lib:
+                problems.append(
+                    "⑤ 主文件内联 pele 内容与根目录 pele.min.js 不一致"
+                    "（升级库后未重新内联？）；如确以内联为准请重新内联后 --sync"
+                )
+
     if problems:
         print("构建校验未通过:")
         for item in problems:
@@ -113,15 +155,18 @@ def run_check() -> bool:
 
 
 def run_sync() -> bool:
-    """把主文件与 mermaid.min.js 复制到 deploy/（shutil.copyfile），打印前后字节数，再自动校验。"""
+    """把主文件与 mermaid.min.js、pele.min.js 复制到 deploy/（shutil.copyfile），打印前后字节数，再自动校验。"""
     if not MAIN_HTML.is_file():
         print(f"同步失败: 主文件缺失 {MAIN_HTML.relative_to(ROOT).as_posix()}")
         return False
     if not MAIN_JS.is_file():
         print(f"同步失败: 根目录 mermaid.min.js 缺失")
         return False
+    if not MAIN_PELE.is_file():
+        print(f"同步失败: 根目录 pele.min.js 缺失（先跑 python fetch_pele.py）")
+        return False
     DEPLOY_DIR.mkdir(parents=True, exist_ok=True)
-    for src, dst in ((MAIN_HTML, DEPLOY_HTML), (MAIN_JS, DEPLOY_JS)):
+    for src, dst in ((MAIN_HTML, DEPLOY_HTML), (MAIN_JS, DEPLOY_JS), (MAIN_PELE, DEPLOY_PELE)):
         before = dst.stat().st_size if dst.is_file() else None
         shutil.copyfile(src, dst)
         after = dst.stat().st_size

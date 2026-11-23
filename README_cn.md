@@ -4,6 +4,7 @@ Mermaid / SVG / HTML 代码转 PNG 图片工具
 线上版 https://www.jjmermaid.xin
 ## 特性
 - **三语法支持** —— 粘贴 Mermaid / SVG / HTML 均可渲染导出，语法自动识别，也可手动指定模式
+- **双渲染引擎** —— Mermaid 图可在 Pele（默认，更快、SVG 自包含无导出污染）/ Mermaid（兼容兜底）两套引擎间一键切换（预览栏选择器）；pele 忽略 `%%{init}%%` 的 themeVariables 全局主题，classDef/linkStyle 完整支持
 - **HTML 默认沙箱** —— HTML 模式在 sandbox iframe 中渲染且不执行脚本；「执行脚本」开关显式开启后才允许执行（风险自担，仅限可信内容）。Agent 的 `mtp_render` 以 `exec_scripts`（默认 `false`）表达同一选择
 - **外观设置** —— 上传图片设为全局背景，填充方式 / 缩放 / 模糊 / 遮罩强度四参数实时可调（数字输入，无滑块）；标题栏与两个页面顶部栏自动启用玻璃模糊；三个主标题取图片主色，其余文字与背景图差值混合；设置含背景图一并持久化到本地
 - **零依赖** —— 只需一个现代浏览器（Edge / Chrome / Firefox），无需安装、无需联网、无任何运行时依赖
@@ -33,9 +34,11 @@ Mermaid / SVG / HTML 代码转 PNG 图片工具
 |------|------|
 | `MermaidToPng.html` | 主文件（mermaid 库已内置，推荐携带/分享） |
 | `MermaidToPng.bat` | 双击用默认浏览器打开主文件 |
-| `deploy/` | 部署目录：`index.html` 与主文件逐字节同步 + `mermaid.min.js` 库副本 |
+| `deploy/` | 部署目录：`index.html` 与主文件逐字节同步 + `mermaid.min.js` / `pele.min.js` 库副本 |
 | `mermaid.min.js` | mermaid v11.4.1 官方 UMD（升级库时用） |
 | `fetch_mermaid.py` | 升级 mermaid 库（需 Python 3，仅标准库，可选） |
+| `pele.min.js` | pele v1.13.0 官方 global 构建（升级库时用） |
+| `fetch_pele.py` | 升级 pele 库（需 Python 3，仅标准库，可选） |
 | `agent/mtp-mcp.mjs` | Agent 接口层 MCP 桥（可选增强；纯转发 + 落盘，零依赖 Node 18+） |
 | `agent/README.md` | Agent 接口层说明（MCP 注册 / 配对 / 排障） |
 | `ARCHITECTURE.md` | 架构文档（渲染导出 / Agent 接口层 / 编辑层） |
@@ -52,5 +55,10 @@ Mermaid / SVG / HTML 代码转 PNG 图片工具
 python fetch_mermaid.py      # 拉取新版 mermaid.min.js
 ```
 拉取后需将新库重新内联进 `MermaidToPng.html`（替换文件中第一个 `<script>...</script>` 内联块，即 mermaid 库所在块）。
+## 升级 pele 库
+```bash
+python fetch_pele.py         # 拉取新版 pele.min.js
+```
+拉取后需将新库重新内联进 `MermaidToPng.html`（替换「pele x.y.z | MIT License」注释所在的 `<script>...</script>` 内联块），随后 `python scripts/build.py --sync` 同步 deploy（--check 会校验内联块与根目录文件一致）。
 ## 石墩子旋转一小时
 ![Stone Badge](https://stone.professorlee.work/api/stone/linke-e/MermaidToPng)

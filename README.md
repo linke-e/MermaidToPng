@@ -7,6 +7,7 @@ Online version: https://www.jjmermaid.xin
 
 ## Features
 - **Three syntaxes** — paste Mermaid / SVG / HTML, all renderable and exportable; syntax is auto-detected, or you can pick a mode manually
+- **Dual rendering engines** — Mermaid diagrams render through Pele (default: faster, self-contained SVG, no export taint) or Mermaid (compatibility fallback), switchable via the preview-bar selector; pele ignores `%%{init}%%` themeVariables while classDef/linkStyle are fully supported
 - **HTML sandbox by default** — HTML mode renders inside a sandboxed iframe and does **not** execute scripts; scripts run only after the "Execute scripts" (执行脚本) switch is turned on explicitly (at your own risk, trusted content only). The Agent's `mtp_render` exposes the same choice via `exec_scripts` (default `false`)
 - **Appearance settings** — upload an image as the global background with four live-adjustable parameters (fill mode / zoom / blur / mask strength; numeric inputs, no sliders); the header bar and both page top bars enable glass blur automatically; the three main headings take the image's dominant color while remaining text blends against the background via difference; all settings, including the background image, persist locally
 - **Zero dependencies** — just a modern browser (Edge / Chrome / Firefox); nothing to install, no network needed, no runtime dependencies
@@ -40,9 +41,11 @@ Just a modern browser (Edge / Chrome / Firefox). Nothing to install, no network,
 |------|------|
 | `MermaidToPng.html` | Main file (mermaid library inlined; recommended for carrying/sharing) |
 | `MermaidToPng.bat` | Double-click to open the main file in the default browser |
-| `deploy/` | Deployment directory: `index.html` byte-identical to the main file + a copy of `mermaid.min.js` |
+| `deploy/` | Deployment directory: `index.html` byte-identical to the main file + copies of `mermaid.min.js` / `pele.min.js` |
 | `mermaid.min.js` | Official mermaid v11.4.1 UMD (for library upgrades) |
 | `fetch_mermaid.py` | Upgrades the mermaid library (needs Python 3, stdlib only, optional) |
+| `pele.min.js` | Official pele v1.13.0 global build (for library upgrades) |
+| `fetch_pele.py` | Upgrades the pele library (needs Python 3, stdlib only, optional) |
 | `agent/mtp-mcp.mjs` | Agent-interface MCP bridge (optional add-on; pure forwarding + file drop, zero dependencies, Node 18+) |
 | `agent/README.md` | Agent interface guide (MCP registration / pairing / troubleshooting) |
 | `ARCHITECTURE.md` | Architecture document (render & export / Agent interface / editor) |
@@ -63,6 +66,12 @@ See [README.md](agent/README.md) and [ARCHITECTURE](ARCHITECTURE.md) §4 for det
 python fetch_mermaid.py      # pulls a new mermaid.min.js
 ```
 After pulling, re-inline the new library into `MermaidToPng.html` (replace the first inline `<script>...</script>` block in the file, i.e. the block holding the mermaid library).
+
+## Upgrading the pele library
+```bash
+python fetch_pele.py         # pulls a new pele.min.js
+```
+After pulling, re-inline the new library into `MermaidToPng.html` (replace the `<script>...</script>` block whose header comment starts with "pele x.y.z | MIT License"), then run `python scripts/build.py --sync` to sync deploy/ (--check verifies the inlined block matches the root file).
 
 ## Spinning Stone One Hour
 ![Stone Badge](https://stone.professorlee.work/api/stone/linke-e/MermaidToPng)

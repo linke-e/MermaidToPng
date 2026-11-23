@@ -91,6 +91,7 @@ The bridge listens on `127.0.0.1` only; on top of that it enforces three hardeni
 Renders Mermaid / SVG / HTML source into a PNG written to `output_path` (relative paths join the first root).
 
 - `mode`: `auto` (default, uses the page's syntax detection) / `mermaid` / `svg` / `html`
+- Mermaid syntax renders through the engine currently selected on the page (the preview-bar "Engine" selector: Pele by default / Mermaid as fallback; pele silently ignores `%%{init}%%` themeVariables while classDef/linkStyle are fully supported)
 - `scale`: integer factor 1–3, default 2; automatically steps down beyond the Canvas limit (recorded in `warnings`)
 - `transparent`: transparent background (takes precedence over `background`); `background` defaults to `#ffffff`
 - `exec_scripts`: run `<script>` in HTML mode (default `false` — the HTML preview is a sandboxed iframe without script execution; enable only for fully trusted content, at your own risk)

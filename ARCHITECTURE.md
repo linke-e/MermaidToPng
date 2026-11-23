@@ -6,10 +6,10 @@
 
 ## 1. Tech Stack & Governing Principles
 
-- **Rendering engine**: mermaid v11.4.1 (UMD, inlined into the main file, no network dependency) + browser-native SVG/HTML rendering
+- **Rendering engine**: dual-engine — pele v1.13.0 (default, global build inlined, synchronous Mermaid→SVG) + mermaid v11.4.1 (UMD inlined, compatibility fallback); both offline + browser-native SVG/HTML rendering
 - **UI**: vanilla HTML/CSS/JS (zero frameworks, zero build); dark cyber theme
 - **Export pipeline**: browser-native Canvas 2D + `toBlob('image/png')` (one shared pipeline for all three syntaxes)
-- **Persistence**: `localStorage` (code, syntax mode, split ratio, scale, transparent-background preference, appearance, editing snapshots, grid settings)
+- **Persistence**: `localStorage` (code, syntax mode, rendering engine, split ratio, scale, transparent-background preference, appearance, editing snapshots, grid settings)
 
 Three governing principles:
 
@@ -66,11 +66,21 @@ graph TD
 | Editor | event layer | 400ms debounced live render; localStorage autosave; Tab inserts two spaces |
 | Test hook | `window.__mtp` | `render / exportBlob / detect / setZoom / zoomTo / fit / state` |
 
+### 2.3 Dual Rendering Engines (2026-11-23)
+
+- **Fork point**: the mermaid fallback branch of `renderDiagram` dispatches to `renderPele` / `renderMermaid` based on the `#engineSel` selector (persisted as `mtp.engine`, default `pele`); the selector is shown only in Mermaid mode (`body.mermaid-mode` maintained by renderDiagram, same mechanism as html-mode).
+- **renderPele**: `tolerantMermaid` repair pass (same copy as the mermaid branch) → `pele.render(code)` (synchronous; failures throw `PeleError{code,line,column,snippet}`) → `state.lastRawSvg` → `mountSVG(svg,false,true)`. Error formatting (line/col/snippet + a "switch to Mermaid and retry" hint) goes through `showError()` (new `state.errorTitle` distinguishes the engine prefix); failures never overwrite the previous diagram.
+- **mountSVG special case**: pele attaches all colors/fonts to the `--pele-*` variable chain in the SVG root `style` (with default-color fallbacks, self-contained); with the third argument `peleSvg=true` it only strips `max-width` and **never removes the whole style** (that would blank all colors); other call paths behave as before.
+- **Why pele fits this pipeline**: the output is pure SVG text (no foreignObject), so `<img>`→Canvas export never taints the canvas — mermaid with `htmlLabels` makes `toBlob` throw tainted-canvas errors; pele's SVG carries its own variable fallback chain, so once it lands in `lastRawSvg` it flows straight through the existing export pipeline.
+- **Known limitation**: pele targets Mermaid 12.1.0 syntax; `%%{init}%%` directives parse without errors but `themeVariables`/theme global theming is **silently ignored** (classDef/class/linkStyle/subgraph fully supported, frontmatter natively supported). A future "init→`--pele-*` variable" translation layer could improve theme fidelity.
+- **Agent**: `mtp_render` goes through the same `renderDiagram` fork and follows the page's current engine selection (see §4).
+- **Library upgrades**: `fetch_pele.py` pulls the pinned version (npmmirror CDN tgz direct + proxy fallback); consistency between the inlined block and the root `pele.min.js` is enforced by `build.py --check` item ⑤.
+
 ## 3. File Inventory
 
 ```
 MermaidToPng/
-├── MermaidToPng.html    # all app code + inlined mermaid library (~2.8MB, double-click to run)
+├── MermaidToPng.html    # all app code + inlined mermaid / pele dual libraries (~3.6MB, double-click to run)
 │                        #   Agent button / pairing panel / bridge client / tool implementations (§4)
 │                        #   Editor layer: header edit toolbar, left pane "Source|Edit" tabs + grouped edit panel,
 │                        #     self-drawn SVG interaction layer, window.__mtpEdit hook, .mte sidecar (§5)
@@ -81,9 +91,12 @@ MermaidToPng/
 │   └── Agent_README_cn.md  # Agent interface guide, Chinese
 ├── deploy/
 │   ├── index.html       # deployment copy (byte-identical to the main file)
-│   └── mermaid.min.js   # mermaid library copy (identical to the root one)
+│   ├── mermaid.min.js   # mermaid library copy (identical to the root one)
+│   └── pele.min.js      # pele library copy (identical to the root one)
 ├── mermaid.min.js       # official mermaid v11.4.1 UMD (2.57MB, for library upgrades)
+├── pele.min.js          # official pele v1.13.0 global build (0.73MB, for library upgrades)
 ├── fetch_mermaid.py     # upgrades the mermaid library (npmmirror direct + proxy fallback; stdlib only)
+├── fetch_pele.py        # upgrades the pele library (npmmirror CDN tgz direct + proxy fallback; stdlib only)
 ├── README.md            # quick start for users, English (README_cn.md = Chinese)
 ├── ARCHITECTURE.md      # this document, English (ARCHITECTURE_cn.md = Chinese)
 └── .gitignore
@@ -404,8 +417,8 @@ Implementation notes: pinch uses capture-phase listeners (unaffected by the canv
 
 | Command | Purpose |
 |---|---|
-| `python scripts/build.py --check` | Four checks: `MermaidToPng.html` == `deploy/index.html` byte-identical; `mermaid.min.js` == `deploy/mermaid.min.js`; the main file carries no release-pollution marks (`impeccable-live`, `src="http://localhost:`); the inlined mermaid ESM marker exists and the root `mermaid.min.js` is present and non-empty |
-| `python scripts/build.py --sync` | Copies the main file and `mermaid.min.js` into `deploy/`, then re-runs `--check` |
+| `python scripts/build.py --check` | Five checks: `MermaidToPng.html` == `deploy/index.html` byte-identical; `mermaid.min.js` == `deploy/mermaid.min.js`; the main file carries no release-pollution marks (`impeccable-live`, `src="http://localhost:`); the inlined mermaid ESM marker exists and the root `mermaid.min.js` is present and non-empty; `pele.min.js` == `deploy/pele.min.js` byte-identical and the inlined pele block matches the root file's content |
+| `python scripts/build.py --sync` | Copies the main file and `mermaid.min.js`, `pele.min.js` into `deploy/`, then re-runs `--check` |
 | `node tests/test_bridge.mjs` | Bridge regression tests (4 groups, 15 cases): `/status` code exposure + forged-Host 403, pairing/Bearer auth + `/file` sandbox, pairing rate limit (5 fails → 429), `/file` decode cap (>32MB → 413). `MTP_STRICT=0` skips the three security-hardening strict cases (403/429/413) as a transitional downgrade while reworking the bridge |
 
 CI: `.github/workflows/ci.yml` runs on push / pull_request (windows-latest, Node 20): `python scripts/build.py --check` → `node tests/test_bridge.mjs`.
@@ -417,6 +430,7 @@ CI: `.github/workflows/ci.yml` runs on push / pull_request (windows-latest, Node
 - Page icon: inlined in `<head>` as `<link rel="icon" href="data:image/x-icon;base64,…">`; to change it, re-base64 and replace that href.
 - Upgrading mermaid: `python fetch_mermaid.py` pulls a new `mermaid.min.js`, then re-inline the library into the main file (replace the first `<script>…</script>` inline block, the one holding the mermaid library).
 - Mermaid upgrade policy: the pinned version is **11.4.1**. To upgrade, first do it on an isolated branch targeting the latest maintained 11.x release and run the regression suite there; only then evaluate 12.x (mind its ES2024 baseline and browser-compatibility changes). Every upgrade must pass visual regression over the fixed example set, and the new version plus the reason must be recorded; the library is always pulled and replaced via `fetch_mermaid.py`.
+- Upgrading pele: `python fetch_pele.py` pulls a new `pele.min.js`, then re-inline the library into the main file (replace the `<script>` inline block whose comment starts with "pele x.y.z | MIT License"), then `python scripts/build.py --sync`. The pinned version is **1.13.0**; upgrades must pass visual regression over the fixed examples (including the test.txt wiring diagram), recording the new version and reason.
 - Agent interface (§4): bridge and page-tool registration, self-test and troubleshooting in `agent/README.md`.
 
 ## 8. References
