@@ -90,7 +90,7 @@ curl http://127.0.0.1:47870/status
 把 Mermaid / SVG / HTML 源码渲染成 PNG 写入 `output_path`（相对路径 = 拼第一个 root）。
 
 - `mode`：`auto`（默认，走页面语法检测）/ `mermaid` / `svg` / `html`
-- Mermaid 语法的渲染走页面当前选择的引擎（预览栏「引擎」选择器：Pele 默认 / Mermaid 兜底；pele 忽略 `%%{init}%%` 的 themeVariables 全局主题，classDef/linkStyle 完整支持）
+- Mermaid 语法的渲染走页面当前选择的引擎（预览栏「引擎」选择器：Pele 默认 / Mermaid 兜底；常见 `%%{init}%%` 主题变量自动映射到 pele 主题，`curve/nodeSpacing` 等布局参数不适用）
 - `scale`：1–3 整数倍率，默认 2；超 Canvas 上限自动降倍率（降级记入 `warnings`）
 - `transparent`：透明底（优先于 `background`）；`background` 默认 `#ffffff`
 - `exec_scripts`：HTML 模式是否执行 `<script>`（默认 `false`——HTML 预览在 sandbox iframe 中不执行脚本；仅对完全可信的内容开启，风险自担）

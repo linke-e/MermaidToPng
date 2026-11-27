@@ -72,7 +72,8 @@ graph TD
 - **renderPele**：`tolerantMermaid` 容错（与 mermaid 分支同一副本）→ `pele.render(code)`（同步，失败抛 `PeleError{code,line,column,snippet}`）→ `state.lastRawSvg` → `mountSVG(svg,false,true)`。错误格式化（行/列/snippet + 「切换 Mermaid 重试」提示）走 `showError()`（新增 `state.errorTitle` 区分引擎前缀），失败不覆盖旧图。
 - **mountSVG 特判**：pele 的颜色/字体全挂在 SVG 根 `style` 的 `--pele-*` 变量链上（带默认色 fallback、自包含），第三参 `peleSvg=true` 时只剥 `max-width`，**不整删 style**（否则全图失色）；其余调用路径行为不变。
 - **为什么 pele 适合本管线**：输出为纯 SVG 文本（无 foreignObject），经 `<img>`→Canvas 导出不污染画布——mermaid 开 `htmlLabels` 时 foreignObject 会令 `toBlob` 抛 tainted canvas；pele SVG 自带变量 fallback 链，落进 `lastRawSvg` 即可直通现有导出管线。
-- **已知限制**：pele 面向 Mermaid 12.1.0 语法；`%%{init}%%` 指令可解析、不报错，但 `themeVariables`/theme 全局主题被**静默忽略**（classDef/class/linkStyle/subgraph 完整支持，frontmatter 原生支持）。未来可加「init→`--pele-*` 变量」翻译层提升主题保真度。
+- **init 主题翻译层（2026-11-27）**：pele 自身忽略 `%%{init}%%` 的全局主题——其连线标签底板 `fill=var(--pele-bg)` 默认白，黑底导出时 linkStyle 白字落白板 → 标签整条不可读（STM32 接线图实测教训）。`renderPele` 现解析 init 块（只认 JSON 写法）并映射：`edgeLabelBackground/mainBkg/background`→`--pele-bg`、`primaryColor`→`--pele-surface`、`secondaryColor/clusterBkg/tertiaryColor`→`--pele-surface-alt`、`textColor` 族→`--pele-fg`+`--pele-muted`、`lineColor`→`--pele-line`+`--pele-border`、border 族→`--pele-border`，注入 SVG 根 style（`lastRawSvg` 同步，预览/导出一致）；`fontFamily/fontSize` 走 RenderOptions。值净化剥 `" < >` 防止破坏 style 属性。
+- **已知限制**：pele 面向 Mermaid 12.1.0 语法；classDef/class/linkStyle/subgraph 完整支持，frontmatter 原生支持；init 的 YAML 写法（非 JSON）静默跳过不翻译；`curve/nodeSpacing/rankSpacing` 等布局参数 pele 自有布局不适用；frontmatter `config:` 主题不做映射。
 - **Agent**：`mtp_render` 经 `renderDiagram` 同一分叉，遵循页面当前引擎选择（见 §4）。
 - **库升级**：`fetch_pele.py` 拉取固定版本（npmmirror CDN tgz 直连 + 代理回退），内联块与根目录 `pele.min.js` 的一致性由 `build.py --check` ⑤ 校验。
 

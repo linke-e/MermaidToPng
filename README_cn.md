@@ -4,7 +4,7 @@ Mermaid / SVG / HTML 代码转 PNG 图片工具
 线上版 https://www.jjmermaid.xin
 ## 特性
 - **三语法支持** —— 粘贴 Mermaid / SVG / HTML 均可渲染导出，语法自动识别，也可手动指定模式
-- **双渲染引擎** —— Mermaid 图可在 Pele（默认，更快、SVG 自包含无导出污染）/ Mermaid（兼容兜底）两套引擎间一键切换（预览栏选择器）；pele 忽略 `%%{init}%%` 的 themeVariables 全局主题，classDef/linkStyle 完整支持
+- **双渲染引擎** —— Mermaid 图可在 Pele（默认，更快、SVG 自包含无导出污染）/ Mermaid（兼容兜底）两套引擎间一键切换（预览栏选择器）；pele 常见 `%%{init}%%` 主题变量（背景/文字/线条/边框/标签底板）自动映射注入，fontFamily/fontSize 生效，classDef/linkStyle 完整支持
 - **HTML 默认沙箱** —— HTML 模式在 sandbox iframe 中渲染且不执行脚本；「执行脚本」开关显式开启后才允许执行（风险自担，仅限可信内容）。Agent 的 `mtp_render` 以 `exec_scripts`（默认 `false`）表达同一选择
 - **外观设置** —— 上传图片设为全局背景，填充方式 / 缩放 / 模糊 / 遮罩强度四参数实时可调（数字输入，无滑块）；标题栏与两个页面顶部栏自动启用玻璃模糊；三个主标题取图片主色，其余文字与背景图差值混合；设置含背景图一并持久化到本地
 - **零依赖** —— 只需一个现代浏览器（Edge / Chrome / Firefox），无需安装、无需联网、无任何运行时依赖

@@ -3452,15 +3452,60 @@ async function renderMermaid(src) {
 
 /* ---- Pele 引擎（2026-11-23 双引擎改造）：obsidianmd/pele 1.13.0，同步渲染 Mermaid→SVG ----
    语法面 = Mermaid 12.1.0；classDef/class/linkStyle/subgraph 完整支持；
-   %%{init}%% 指令不报错但 themeVariables 全局主题被静默忽略（已知限制，见 ARCHITECTURE §2.3）。
+   %%{init}%% 经 peleTranslateInit 翻译常用 themeVariables → --pele-* 变量注入（2026-11-27），
+   fontFamily/fontSize 走 RenderOptions；curve/nodeSpacing/rankSpacing 等布局参数不适用（自有布局）。
    输出 SVG 根 style 自带 --pele-* 变量链（含默认色 fallback），自包含 → 直通 SVG→img→Canvas
    导出管线且无 foreignObject 污染；渲染失败不覆盖旧图（与 mermaid 分支同语义）。 */
+/* ---- init 指令解析：%%{init: {...}}%% 只认 JSON 写法（YAML 变体静默跳过，行为退回忽略）---- */
+function peleParseInit(src) {
+  const m = /%%\{\s*init\s*:\s*([\s\S]*?)\}\s*%%/i.exec(src);
+  if (!m) return null;
+  try { const cfg = JSON.parse(m[1]); return (cfg && typeof cfg === 'object') ? cfg : null; }
+  catch (_) { return null; }
+}
+/* ---- init 主题翻译层（2026-11-27）----
+   pele 自身忽略 themeVariables：连线标签底板 fill=var(--pele-bg) 默认白，黑底导出时
+   linkStyle 白字落白板 → 整条标签不可读（STM32 接线图实测教训）。此处把常用主题色映射为
+   --pele-* 变量注入 SVG 根 style（预览/导出共用的 lastRawSvg 同步生效）。值净化剥 " < >，
+   防止破坏 style 属性结构；同组多个变量名按优先级取第一个命中。 */
+function peleTranslateInit(src, svg) {
+  const cfg = peleParseInit(src);
+  if (!cfg) return svg;
+  const tv = (cfg.themeVariables && typeof cfg.themeVariables === 'object') ? cfg.themeVariables : {};
+  const clean = v => String(v).trim().replace(/["<>]/g, '');
+  const pick = (...names) => {
+    for (const n of names) { const v = tv[n]; if (typeof v === 'string' && v.trim()) return clean(v); }
+    return null;
+  };
+  const vars = [];
+  const put = (name, val) => { if (val) vars.push(name + ':' + val); };
+  put('--pele-bg', pick('edgeLabelBackground', 'mainBkg', 'background'));      // 标签底板/画布
+  put('--pele-surface', pick('primaryColor', 'mainBkg'));                      // 节点填充
+  put('--pele-surface-alt', pick('secondaryColor', 'clusterBkg', 'tertiaryColor')); // 子图/异形填充
+  put('--pele-fg', pick('textColor', 'primaryTextColor', 'secondaryTextColor', 'tertiaryTextColor', 'titleColor'));
+  put('--pele-muted', pick('textColor'));                                      // 连线标签默认灰字跟随主题文字色
+  put('--pele-line', pick('lineColor'));
+  put('--pele-border', pick('lineColor', 'primaryBorderColor', 'clusterBorder', 'secondaryBorderColor', 'tertiaryBorderColor'));
+  if (!vars.length) return svg;
+  return svg.replace(/<svg([^>]*?)style="/, '<svg$1style="' + vars.join(';') + ';');
+}
 function renderPele(src) {
   const code = tolerantMermaid(src);
   try {
-    const r = pele.render(code);                     // 同步；失败抛 PeleError{code,line,column,snippet}
-    state.lastRawSvg = r.svg;
-    mountSVG(r.svg, false, true);
+    /* fontFamily/fontSize：init 里带出来走 RenderOptions（pele 原生支持） */
+    const opts = {};
+    const cfg = peleParseInit(code);
+    if (cfg) {
+      const tv = (cfg.themeVariables && typeof cfg.themeVariables === 'object') ? cfg.themeVariables : {};
+      const ff = (typeof tv.fontFamily === 'string' && tv.fontFamily.trim()) || (typeof cfg.fontFamily === 'string' && cfg.fontFamily.trim());
+      if (ff) opts.fontFamily = ff.trim().replace(/["<>]/g, '');
+      const fs = parseInt(tv.fontSize, 10);
+      if (fs > 4 && fs < 100) opts.fontSize = fs;
+    }
+    const r = pele.render(code, Object.keys(opts).length ? opts : undefined);  // 同步；失败抛 PeleError{code,line,column,snippet}
+    const themed = peleTranslateInit(code, r.svg);
+    state.lastRawSvg = themed;
+    mountSVG(themed, false, true);
     return { ok: true, mode: 'mermaid', width: state.vbW, height: state.vbH, engine: 'pele' };
   } catch (e) {
     const pe = (e && e.name === 'PeleError') ? e : null;

@@ -7,7 +7,7 @@ Online version: https://www.jjmermaid.xin
 
 ## Features
 - **Three syntaxes** — paste Mermaid / SVG / HTML, all renderable and exportable; syntax is auto-detected, or you can pick a mode manually
-- **Dual rendering engines** — Mermaid diagrams render through Pele (default: faster, self-contained SVG, no export taint) or Mermaid (compatibility fallback), switchable via the preview-bar selector; pele ignores `%%{init}%%` themeVariables while classDef/linkStyle are fully supported
+- **Dual rendering engines** — Mermaid diagrams render through Pele (default: faster, self-contained SVG, no export taint) or Mermaid (compatibility fallback), switchable via the preview-bar selector; common `%%{init}%%` theme variables (background/text/line/border/label plate) are auto-mapped onto pele's theme, fontFamily/fontSize take effect, and classDef/linkStyle are fully supported
 - **HTML sandbox by default** — HTML mode renders inside a sandboxed iframe and does **not** execute scripts; scripts run only after the "Execute scripts" (执行脚本) switch is turned on explicitly (at your own risk, trusted content only). The Agent's `mtp_render` exposes the same choice via `exec_scripts` (default `false`)
 - **Appearance settings** — upload an image as the global background with four live-adjustable parameters (fill mode / zoom / blur / mask strength; numeric inputs, no sliders); the header bar and both page top bars enable glass blur automatically; the three main headings take the image's dominant color while remaining text blends against the background via difference; all settings, including the background image, persist locally
 - **Zero dependencies** — just a modern browser (Edge / Chrome / Firefox); nothing to install, no network needed, no runtime dependencies
